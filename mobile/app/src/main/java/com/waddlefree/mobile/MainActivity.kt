@@ -86,7 +86,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -914,14 +914,18 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
 
                         val githubIconPath = remember {
                             PathParser().parsePathString(
-                                "M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 " +
-                                    "0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-" +
-                                    ".908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-" +
-                                    ".647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-" +
-                                    ".253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 " +
-                                    "2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 " +
-                                    "1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 " +
-                                    "2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                                "M 8 0 C 3.58 0 0 3.58 0 8 c 0 3.54 2.29 6.53 5.47 7.59 " +
+                                    "c 0.4 0.07 0.55 -0.17 0.55 -0.38 c 0 -0.19 -0.01 -0.82 -0.01 -1.49 " +
+                                    "c -2.01 0.37 -2.53 -0.49 -2.69 -0.94 c -0.09 -0.23 -0.48 -0.94 -0.82 -1.13 " +
+                                    "c -0.28 -0.15 -0.68 -0.52 -0.01 -0.53 c 0.63 -0.01 1.08 0.58 1.23 0.82 " +
+                                    "c 0.72 1.21 1.87 0.87 2.33 0.66 c 0.07 -0.52 0.28 -0.87 0.51 -1.07 " +
+                                    "c -1.78 -0.2 -3.64 -0.89 -3.64 -3.95 c 0 -0.87 0.31 -1.59 0.82 -2.15 " +
+                                    "c -0.08 -0.2 -0.36 -1.02 0.08 -2.12 c 0 0 0.67 -0.21 2.2 0.82 " +
+                                    "c 0.64 -0.18 1.32 -0.27 2 -0.27 c 0.68 0 1.36 0.09 2 0.27 " +
+                                    "c 1.53 -1.04 2.2 -0.82 2.2 -0.82 c 0.44 1.1 0.16 1.92 0.08 2.12 " +
+                                    "c 0.51 0.56 0.82 1.27 0.82 2.15 c 0 3.07 -1.87 3.75 -3.65 3.95 " +
+                                    "c 0.29 0.25 0.54 0.73 0.54 1.48 c 0 1.07 -0.01 1.93 -0.01 2.2 " +
+                                    "c 0 0.21 0.15 0.46 0.55 0.38 C 13.71 14.53 16 11.53 16 8 C 16 3.58 12.42 0 8 0 Z"
                             ).toPath()
                         }
 
@@ -945,9 +949,12 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.Center
                             ) {
-                                Canvas(modifier = Modifier.size((16f * uiScale).dp)) {
-                                    val s = size.width / 24f
-                                    scale(scaleX = s, scaleY = s, pivot = Offset.Zero) {
+                                Canvas(modifier = Modifier.size((16.5f * uiScale).dp)) {
+                                    val s = size.width / 17f
+                                    withTransform({
+                                        translate(left = 0.5f * s, top = 0.5f * s)
+                                        scale(scaleX = s, scaleY = s, pivot = Offset.Zero)
+                                    }) {
                                         drawPath(path = githubIconPath, color = palette.accent)
                                     }
                                 }
