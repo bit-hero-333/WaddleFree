@@ -535,6 +535,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 keyboardController = keyboardController,
                                 derivedPort = derivedPort,
                                 onTogglePortInfo = { isPortInfoOpen = !isPortInfoOpen },
+                                isCompact = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 10.dp)
@@ -949,309 +950,350 @@ private fun OptionsMenuBarContent(
     keyboardController: SoftwareKeyboardController?,
     derivedPort: Int,
     onTogglePortInfo: () -> Unit,
+    isCompact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var isIntervalDropdownExpanded by remember { mutableStateOf(false) }
     val customFocusRequesters = remember { List(3) { FocusRequester() } }
+
+    @Composable
+    fun ThemeAndTextControls() {
+        Text(
+            text = "Theme",
+            fontSize = (12f * textScale).sp,
+            fontWeight = FontWeight.Medium,
+            color = palette.secondaryText,
+            modifier = Modifier.padding(end = 6.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(9.dp))
+                .background(palette.subtleSurface)
+                .padding(2.5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf("Dark" to "Dark", "Light" to "Light", "System" to "Device").forEach { (key, label) ->
+                val active = themePref.equals(key, ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (active) palette.accent else Color.Transparent)
+                        .clickable { onThemeChange(key) }
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = (12f * textScale).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (active) palette.onAccent else palette.secondaryText
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // 'T' with slightly overlaid Vector Accent Gear Button
+        Box(
+            modifier = Modifier
+                .size(width = (34f * uiScale).dp, height = (30f * uiScale).dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(palette.subtleSurface)
+                .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                .clickable { onOpenTextSettings() },
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size((20f * uiScale).dp)) {
+                val s = size.width / 22f
+                val tPath = Path().apply {
+                    moveTo(1.5f * s, 2.5f * s)
+                    lineTo(15.5f * s, 2.5f * s)
+                    lineTo(15.5f * s, 5.3f * s)
+                    lineTo(10.0f * s, 5.3f * s)
+                    lineTo(10.0f * s, 18.0f * s)
+                    lineTo(7.0f * s, 18.0f * s)
+                    lineTo(7.0f * s, 5.3f * s)
+                    lineTo(1.5f * s, 5.3f * s)
+                    close()
+                }
+                drawPath(tPath, color = palette.primaryText)
+
+                val gearCenter = Offset(14.2f * s, 14.8f * s)
+                drawCircle(
+                    color = palette.menuSurface,
+                    radius = 6.8f * s,
+                    center = gearCenter
+                )
+
+                val gearPath = Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    val outerR = 5.8f * s
+                    val innerR = 4.3f * s
+                    val teeth = 8
+                    val totalSteps = teeth * 4
+                    for (i in 0 until totalSteps) {
+                        val angle = (i * 2.0 * Math.PI) / totalSteps
+                        val r = if (i % 4 == 0 || i % 4 == 1) outerR else innerR
+                        val px = gearCenter.x + (r * cos(angle)).toFloat()
+                        val py = gearCenter.y + (r * sin(angle)).toFloat()
+                        if (i == 0) moveTo(px, py) else lineTo(px, py)
+                    }
+                    close()
+                    addOval(
+                        androidx.compose.ui.geometry.Rect(
+                            gearCenter.x - 2.0f * s,
+                            gearCenter.y - 2.0f * s,
+                            gearCenter.x + 2.0f * s,
+                            gearCenter.y + 2.0f * s
+                        )
+                    )
+                }
+                drawPath(gearPath, color = palette.accent)
+            }
+        }
+    }
+
+    @Composable
+    fun AutoCheckControls() {
+        Text(
+            text = "Auto-Check",
+            fontSize = (12f * textScale).sp,
+            fontWeight = FontWeight.Medium,
+            color = palette.secondaryText,
+            modifier = Modifier.padding(end = 6.dp)
+        )
+
+        Box {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(palette.subtleSurface)
+                    .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                    .clickable {
+                        focusManager.clearFocus()
+                        isIntervalDropdownExpanded = true
+                    }
+                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = autoCheckPreset,
+                    fontSize = (12f * textScale).sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.primaryText
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = "▾",
+                    fontSize = (11f * textScale).sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.accent
+                )
+            }
+
+            DropdownMenu(
+                expanded = isIntervalDropdownExpanded,
+                onDismissRequest = { isIntervalDropdownExpanded = false },
+                modifier = Modifier
+                    .background(palette.popupBg)
+                    .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+            ) {
+                AutoCheckPresets.forEach { preset ->
+                    val isSelected = autoCheckPreset == preset
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (preset == "Custom") "Custom (ss:mm:hh)" else preset,
+                                fontSize = (12.5f * textScale).sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) palette.accent else palette.primaryText
+                            )
+                        },
+                        onClick = {
+                            onAutoCheckPresetChange(preset)
+                            isIntervalDropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        if (autoCheckPreset == "Custom") {
+            Spacer(modifier = Modifier.width(6.dp))
+            val placeholders = listOf("ss", "mm", "hh")
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(palette.subtleSurface)
+                    .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp)
+            ) {
+                for (idx in 0 until 3) {
+                    BasicTextField(
+                        value = customCheckParts[idx],
+                        onValueChange = { raw ->
+                            val digits = raw.filter { it.isDigit() }.take(2)
+                            val num = digits.toIntOrNull()
+                            val maxAllowed = if (idx < 2) 59 else 99
+                            val clamped = if (num != null && num > maxAllowed) maxAllowed.toString() else digits
+                            customCheckParts[idx] = clamped
+                            onCustomCheckPartsChanged()
+
+                            if (clamped.length == 2) {
+                                if (idx < 2) {
+                                    customFocusRequesters[idx + 1].requestFocus()
+                                } else {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .width((28f * uiScale).dp)
+                            .focusRequester(customFocusRequesters[idx])
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(palette.faqAnswerBg)
+                            .padding(vertical = 3.dp, horizontal = 2.dp),
+                        textStyle = TextStyle(
+                            fontSize = (11.5f * textScale).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.primaryText,
+                            textAlign = TextAlign.Center
+                        ),
+                        singleLine = true,
+                        cursorBrush = SolidColor(palette.accent),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = if (idx < 2) ImeAction.Next else ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            }
+                        ),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.Center) {
+                                if (customCheckParts[idx].isEmpty()) {
+                                    Text(
+                                        text = placeholders[idx],
+                                        fontSize = (10.5f * textScale).sp,
+                                        color = palette.secondaryText.copy(alpha = 0.5f),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+                    if (idx < 2) {
+                        Text(
+                            text = ":",
+                            fontSize = (12f * textScale).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.accent,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun PortControls() {
+        Text(
+            text = "Port: $derivedPort",
+            fontSize = (12f * textScale).sp,
+            fontWeight = FontWeight.SemiBold,
+            color = palette.primaryText
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .size((19f * uiScale).dp)
+                .clip(CircleShape)
+                .border(1.5.dp, palette.accent, CircleShape)
+                .clickable { onTogglePortInfo() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "i",
+                fontSize = (11f * uiScale).sp,
+                fontWeight = FontWeight.Bold,
+                fontStyle = FontStyle.Italic,
+                fontFamily = FontFamily.Serif,
+                color = palette.accent
+            )
+        }
+    }
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(palette.menuSurface)
             .border(1.dp, palette.tileBorder, RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .padding(horizontal = 10.dp, vertical = 7.dp)
     ) {
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Theme",
-                fontSize = (12f * textScale).sp,
-                fontWeight = FontWeight.Medium,
-                color = palette.secondaryText,
-                modifier = Modifier.padding(end = 6.dp)
-            )
-
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(palette.subtleSurface)
-                    .padding(2.5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                listOf("Dark" to "Dark", "Light" to "Light", "System" to "Device").forEach { (key, label) ->
-                    val active = themePref.equals(key, ignoreCase = true)
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(7.dp))
-                            .background(if (active) palette.accent else Color.Transparent)
-                            .clickable { onThemeChange(key) }
-                            .padding(horizontal = 9.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            text = label,
-                            fontSize = (12f * textScale).sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (active) palette.onAccent else palette.secondaryText
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // 'T' with slightly overlaid Vector Accent Gear Button
-            Box(
-                modifier = Modifier
-                    .size(width = (34f * uiScale).dp, height = (30f * uiScale).dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(palette.subtleSurface)
-                    .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
-                    .clickable { onOpenTextSettings() },
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(modifier = Modifier.size((20f * uiScale).dp)) {
-                    val s = size.width / 22f
-                    // Vector 'T'
-                    val tPath = Path().apply {
-                        moveTo(1.5f * s, 2.5f * s)
-                        lineTo(15.5f * s, 2.5f * s)
-                        lineTo(15.5f * s, 5.3f * s)
-                        lineTo(10.0f * s, 5.3f * s)
-                        lineTo(10.0f * s, 18.0f * s)
-                        lineTo(7.0f * s, 18.0f * s)
-                        lineTo(7.0f * s, 5.3f * s)
-                        lineTo(1.5f * s, 5.3f * s)
-                        close()
-                    }
-                    drawPath(tPath, color = palette.primaryText)
-
-                    // Halo cutout for gear overlap
-                    val gearCenter = Offset(14.2f * s, 14.8f * s)
-                    drawCircle(
-                        color = palette.menuSurface,
-                        radius = 6.8f * s,
-                        center = gearCenter
-                    )
-
-                    // 8-toothed Vector Gear with hollow center
-                    val gearPath = Path().apply {
-                        fillType = PathFillType.EvenOdd
-                        val outerR = 5.8f * s
-                        val innerR = 4.3f * s
-                        val teeth = 8
-                        val totalSteps = teeth * 4
-                        for (i in 0 until totalSteps) {
-                            val angle = (i * 2.0 * Math.PI) / totalSteps
-                            val r = if (i % 4 == 0 || i % 4 == 1) outerR else innerR
-                            val px = gearCenter.x + (r * cos(angle)).toFloat()
-                            val py = gearCenter.y + (r * sin(angle)).toFloat()
-                            if (i == 0) moveTo(px, py) else lineTo(px, py)
-                        }
-                        close()
-                        // Center hole
-                        addOval(
-                            androidx.compose.ui.geometry.Rect(
-                                gearCenter.x - 2.0f * s,
-                                gearCenter.y - 2.0f * s,
-                                gearCenter.x + 2.0f * s,
-                                gearCenter.y + 2.0f * s
-                            )
-                        )
-                    }
-                    drawPath(gearPath, color = palette.accent)
-                }
-            }
-
-            // Divider
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 10.dp)
-                    .width(1.dp)
-                    .height((18f * uiScale).dp)
-                    .background(palette.tileBorder)
-            )
-
-            // Auto-Check Status Interval Dropdown + Custom ss:mm:hh Input
-            Text(
-                text = "Auto-Check",
-                fontSize = (12f * textScale).sp,
-                fontWeight = FontWeight.Medium,
-                color = palette.secondaryText,
-                modifier = Modifier.padding(end = 6.dp)
-            )
-
-            Box {
+        if (isCompact) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(palette.subtleSurface)
-                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
-                        .clickable {
-                            focusManager.clearFocus()
-                            isIntervalDropdownExpanded = true
-                        }
-                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = autoCheckPreset,
-                        fontSize = (12f * textScale).sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = palette.primaryText
+                    ThemeAndTextControls()
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp)
+                            .width(1.dp)
+                            .height((18f * uiScale).dp)
+                            .background(palette.tileBorder)
                     )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "▾",
-                        fontSize = (11f * textScale).sp,
-                        fontWeight = FontWeight.Bold,
-                        color = palette.accent
-                    )
+                    PortControls()
                 }
 
-                DropdownMenu(
-                    expanded = isIntervalDropdownExpanded,
-                    onDismissRequest = { isIntervalDropdownExpanded = false },
+                Box(
                     modifier = Modifier
-                        .background(palette.popupBg)
-                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
-                ) {
-                    AutoCheckPresets.forEach { preset ->
-                        val isSelected = autoCheckPreset == preset
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = if (preset == "Custom") "Custom (ss:mm:hh)" else preset,
-                                    fontSize = (12.5f * textScale).sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) palette.accent else palette.primaryText
-                                )
-                            },
-                            onClick = {
-                                onAutoCheckPresetChange(preset)
-                                isIntervalDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            if (autoCheckPreset == "Custom") {
-                Spacer(modifier = Modifier.width(6.dp))
-                val placeholders = listOf("ss", "mm", "hh")
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(palette.subtleSurface)
-                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 6.dp, vertical = 3.dp)
-                ) {
-                    for (idx in 0 until 3) {
-                        BasicTextField(
-                            value = customCheckParts[idx],
-                            onValueChange = { raw ->
-                                val digits = raw.filter { it.isDigit() }.take(2)
-                                val num = digits.toIntOrNull()
-                                val maxAllowed = if (idx < 2) 59 else 99
-                                val clamped = if (num != null && num > maxAllowed) maxAllowed.toString() else digits
-                                customCheckParts[idx] = clamped
-                                onCustomCheckPartsChanged()
-
-                                if (clamped.length == 2) {
-                                    if (idx < 2) {
-                                        customFocusRequesters[idx + 1].requestFocus()
-                                    } else {
-                                        focusManager.clearFocus()
-                                        keyboardController?.hide()
-                                    }
-                                }
-                            },
-                            modifier = Modifier
-                                .width((28f * uiScale).dp)
-                                .focusRequester(customFocusRequesters[idx])
-                                .clip(RoundedCornerShape(5.dp))
-                                .background(palette.faqAnswerBg)
-                                .padding(vertical = 3.dp, horizontal = 2.dp),
-                            textStyle = TextStyle(
-                                fontSize = (11.5f * textScale).sp,
-                                fontWeight = FontWeight.Bold,
-                                color = palette.primaryText,
-                                textAlign = TextAlign.Center
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(palette.accent),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = if (idx < 2) ImeAction.Next else ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-                                }
-                            ),
-                            decorationBox = { innerTextField ->
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (customCheckParts[idx].isEmpty()) {
-                                        Text(
-                                            text = placeholders[idx],
-                                            fontSize = (10.5f * textScale).sp,
-                                            color = palette.secondaryText.copy(alpha = 0.5f),
-                                            textAlign = TextAlign.Center
-                                        )
-                                    }
-                                    innerTextField()
-                                }
-                            }
-                        )
-                        if (idx < 2) {
-                            Text(
-                                text = ":",
-                                fontSize = (12f * textScale).sp,
-                                fontWeight = FontWeight.Bold,
-                                color = palette.accent,
-                                modifier = Modifier.padding(horizontal = 2.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Divider
-            Box(
-                modifier = Modifier
-                    .padding(horizontal = 10.dp)
-                    .width(1.dp)
-                    .height((18f * uiScale).dp)
-                    .background(palette.tileBorder)
-            )
-
-            // Port + Encircled 'i' Icon
-            Text(
-                text = "Port: $derivedPort",
-                fontSize = (12f * textScale).sp,
-                fontWeight = FontWeight.SemiBold,
-                color = palette.primaryText
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .size((19f * uiScale).dp)
-                    .clip(CircleShape)
-                    .border(1.5.dp, palette.accent, CircleShape)
-                    .clickable { onTogglePortInfo() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "i",
-                    fontSize = (11f * uiScale).sp,
-                    fontWeight = FontWeight.Bold,
-                    fontStyle = FontStyle.Italic,
-                    fontFamily = FontFamily.Serif,
-                    color = palette.accent
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(palette.tileBorder.copy(alpha = 0.5f))
                 )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AutoCheckControls()
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ThemeAndTextControls()
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp)
+                        .width(1.dp)
+                        .height((18f * uiScale).dp)
+                        .background(palette.tileBorder)
+                )
+                AutoCheckControls()
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp)
+                        .width(1.dp)
+                        .height((18f * uiScale).dp)
+                        .background(palette.tileBorder)
+                )
+                PortControls()
             }
         }
     }

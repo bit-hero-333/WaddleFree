@@ -19,6 +19,7 @@ local.properties
 *.aab
 *.keystore
 *.jks
+!mobile/app/keystore/waddlefree.jks
 
 # OS / Misc
 .DS_Store

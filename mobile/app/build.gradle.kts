@@ -16,11 +16,22 @@ android {
         versionName = "0.1.1"
     }
 
+    signingConfigs {
+        create("releaseKey") {
+            storeFile = file("keystore/waddlefree.jks")
+            storePassword = "waddlefree123"
+            keyAlias = "waddlefree"
+            keyPassword = "waddlefree123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("releaseKey")
+        }
         release {
             isMinifyEnabled = false
-            // Sign with debug key by default so the APK from GitHub Releases can be installed directly on Android
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("releaseKey")
         }
     }
 
