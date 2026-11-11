@@ -1,0 +1,25 @@
+# .NET / Windows Desktop
+bin/
+obj/
+.vs/
+*.user
+*.suo
+publish/
+*.exe
+*.pdb
+settings.json
+
+# Android / Mobile
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# OS / Misc
+.DS_Store
+Thumbs.db

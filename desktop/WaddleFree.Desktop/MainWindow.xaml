@@ -1,0 +1,838 @@
+<Window x:Class="WaddleFree.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WaddleFree"
+        Width="860"
+        Height="410"
+        MinWidth="480"
+        MinHeight="290"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        FontFamily="Segoe UI Variable Display, Segoe UI"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        SourceInitialized="Window_SourceInitialized"
+        SizeChanged="Window_SizeChanged"
+        LocationChanged="Window_LocationChanged"
+        StateChanged="Window_StateChanged"
+        Closing="Window_Closing">
+
+    <Window.Resources>
+        <!-- Selectable Read-Only TextBox (Allows highlighting and copying text anywhere) -->
+        <Style x:Key="SelectableTextBoxStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsReadOnlyCaretVisible" Value="False"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Cursor" Value="IBeam"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="SelectionOpacity" Value="0.42"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <ScrollViewer x:Name="PART_ContentHost"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Padding="0"
+                                      Margin="0"
+                                      Focusable="False"
+                                      HorizontalScrollBarVisibility="Hidden"
+                                      VerticalScrollBarVisibility="Hidden"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Interactive Tile Button Template -->
+        <Style x:Key="TileCardButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource TileBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource TileBorderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CardBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="20"
+                                Padding="18,14">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardBorder" Property="Background" Value="{DynamicResource TileHoverBackgroundBrush}"/>
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CardBorder" Property="Opacity" Value="0.88"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Square Icon Button Style (Scales proportionally with Text Size!) -->
+        <Style x:Key="IconButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource TileBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource TileBorderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Width" Value="{DynamicResource IconButtonSize}"/>
+            <Setter Property="Height" Value="{DynamicResource IconButtonSize}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="{DynamicResource TileHoverBackgroundBrush}"/>
+                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Option Pill Button Style -->
+        <Style x:Key="ThemePillButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeSmall}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="PillBorder"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="7"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Clickable FAQ Header Button Style -->
+        <Style x:Key="FaqHeaderButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                Padding="13,11">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="RootGrid" Margin="24,18,24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ROW 0: TOP BAR -->
+        <Grid Grid.Row="0" MinHeight="44" Panel.ZIndex="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Title & Status Badge -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="WaddleFree"
+                           FontSize="{DynamicResource FontSizeTitle}"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"
+                           VerticalAlignment="Center"/>
+                <Border Background="{DynamicResource AccentSubtleBrush}"
+                        CornerRadius="6"
+                        Padding="8,3"
+                        Margin="10,0,0,0"
+                        VerticalAlignment="Center">
+                    <TextBlock x:Name="AdapterBadgeText"
+                               Text="Listening"
+                               FontSize="{DynamicResource FontSizeSmall}"
+                               FontWeight="Medium"
+                               Foreground="{DynamicResource PrimaryTextBrush}"/>
+                </Border>
+            </StackPanel>
+
+            <!-- Middle-Right: Sideways Slide-Out Menu Panel (Constrained & Horizontally Scrollable) -->
+            <Border x:Name="SidewaysMenuPanel"
+                    Grid.Column="1"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Background="{DynamicResource MenuSurfaceBrush}"
+                    BorderBrush="{DynamicResource TileBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="10,4"
+                    Margin="12,0,10,0"
+                    Visibility="Collapsed"
+                    RenderTransformOrigin="1,0.5">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="MenuSlideTransform" X="0"/>
+                </Border.RenderTransform>
+
+                <ScrollViewer x:Name="SidewaysMenuScrollViewer"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              PreviewMouseWheel="SidewaysMenuScrollViewer_PreviewMouseWheel">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- 1. Theme Selector + 'T with overlaid Vector Gear' Button -->
+                        <TextBlock Text="Theme"
+                                   FontSize="{DynamicResource FontSizeSmall}"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="2,0,7,0"/>
+
+                        <Border Background="{DynamicResource SubtleSurfaceBrush}"
+                                CornerRadius="9"
+                                Padding="2.5"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="ThemeDarkButton"
+                                        Content="Dark"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Click="ThemeDarkButton_Click"/>
+                                <Button x:Name="ThemeLightButton"
+                                        Content="Light"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Margin="1,0"
+                                        Click="ThemeLightButton_Click"/>
+                                <Button x:Name="ThemeSystemButton"
+                                        Content="Device"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Click="ThemeSystemButton_Click"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 'T' with overlaid Vector Accent Gear Button (Scales with UI) -->
+                        <Button x:Name="TextSettingsButton"
+                                Width="{DynamicResource TButtonWidth}"
+                                Height="{DynamicResource TButtonHeight}"
+                                Margin="6,0,0,0"
+                                VerticalAlignment="Center"
+                                Cursor="Hand"
+                                ToolTip="Text Size, Color &amp; Contrast Settings"
+                                Click="TextSettingsButton_Click">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="TBtnBorder"
+                                            Background="{DynamicResource SubtleSurfaceBrush}"
+                                            BorderBrush="{DynamicResource TileBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                        <Viewbox Width="{DynamicResource TIconSize}"
+                                                 Height="{DynamicResource TIconSize}"
+                                                 Stretch="Uniform">
+                                            <Canvas Width="22" Height="22">
+                                                <!-- Crisp Vector 'T' -->
+                                                <Path Fill="{DynamicResource PrimaryTextBrush}"
+                                                      Data="M 1.5,2.5 H 15.5 V 5.3 H 10.0 V 18.0 H 7.0 V 5.3 H 1.5 Z"/>
+                                                <!-- Subtle cutout ring so the overlaid gear cleanly overlaps the T stem -->
+                                                <Ellipse Canvas.Left="7.2" Canvas.Top="7.8" Width="14" Height="14"
+                                                         Fill="{DynamicResource MenuSurfaceBrush}"/>
+                                                <!-- Crisp 8-Toothed Vector Gear in Accent Color -->
+                                                <Path Canvas.Left="7.8" Canvas.Top="8.4"
+                                                      Width="12.8" Height="12.8"
+                                                      Stretch="Uniform"
+                                                      Fill="{DynamicResource AccentBrush}"
+                                                      Data="F0 M 10.8,1 L 13.2,1 L 13.6,3.1 C 14.3,3.3 15.0,3.6 15.6,4.0 L 17.5,2.8 L 19.2,4.5 L 18.0,6.4 C 18.4,7.0 18.7,7.7 18.9,8.4 L 21,8.8 L 21,11.2 L 18.9,11.6 C 18.7,12.3 18.4,13.0 18.0,13.6 L 19.2,15.5 L 17.5,17.2 L 15.6,16.0 C 15.0,16.4 14.3,16.7 13.6,16.9 L 13.2,19 L 10.8,19 L 10.4,16.9 C 9.7,16.7 9.0,16.4 8.4,16.0 L 6.5,17.2 L 4.8,15.5 L 6.0,13.6 C 5.6,13.0 5.3,12.3 5.1,11.6 L 3,11.2 L 3,8.8 L 5.1,8.4 C 5.3,7.7 5.6,7.0 6.0,6.4 L 4.8,4.5 L 6.5,2.8 L 8.4,4.0 C 9.0,3.6 9.7,3.3 10.4,3.1 Z M 8.8,10 A 3.2,3.2 0 1 0 15.2,10 A 3.2,3.2 0 1 0 8.8,10 Z"/>
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="TBtnBorder" Property="Background" Value="{DynamicResource TileHoverBackgroundBrush}"/>
+                                            <Setter TargetName="TBtnBorder" Property="BorderBrush" Value="{DynamicResource AccentBorderBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <!-- Divider -->
+                        <Border Width="1"
+                                Height="{DynamicResource MenuDividerHeight}"
+                                Background="{DynamicResource TileBorderBrush}"
+                                Margin="11,0"/>
+
+                        <!-- 2. Minimize to System Tray Selector -->
+                        <TextBlock Text="To Tray"
+                                   FontSize="{DynamicResource FontSizeSmall}"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,7,0"/>
+
+                        <Border Background="{DynamicResource SubtleSurfaceBrush}"
+                                CornerRadius="9"
+                                Padding="2.5"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="TrayMinimizeButton"
+                                        Content="Minimize"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Click="TrayMinimizeButton_Click"/>
+                                <Button x:Name="TrayCloseButton"
+                                        Content="Close"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Margin="1,0"
+                                        Click="TrayCloseButton_Click"/>
+                                <Button x:Name="TrayBothButton"
+                                        Content="Both"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Margin="0,0,1,0"
+                                        Click="TrayBothButton_Click"/>
+                                <Button x:Name="TrayNoneButton"
+                                        Content="None"
+                                        Style="{StaticResource ThemePillButtonStyle}"
+                                        Click="TrayNoneButton_Click"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Divider -->
+                        <Border Width="1"
+                                Height="{DynamicResource MenuDividerHeight}"
+                                Background="{DynamicResource TileBorderBrush}"
+                                Margin="11,0"/>
+
+                        <!-- 3. Selected Port + Encircled 'i' Hover Icon -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,2,0">
+                            <TextBlock x:Name="ActivePortText"
+                                       Text="Port: —"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       VerticalAlignment="Center"/>
+
+                            <!-- Encircled 'i' Icon (Scales with UI) -->
+                            <Border x:Name="PortInfoIconBorder"
+                                    Width="{DynamicResource PortIconSize}"
+                                    Height="{DynamicResource PortIconSize}"
+                                    CornerRadius="{DynamicResource PortIconCornerRadius}"
+                                    BorderBrush="{DynamicResource AccentBrush}"
+                                    BorderThickness="1.5"
+                                    Background="Transparent"
+                                    Margin="6,0,0,0"
+                                    Cursor="Hand"
+                                    VerticalAlignment="Center"
+                                    MouseEnter="PortInfoArea_MouseEnter"
+                                    MouseLeave="PortInfoArea_MouseLeave">
+                                <Viewbox Margin="3">
+                                    <TextBlock Text="i"
+                                               FontWeight="Bold"
+                                               FontStyle="Italic"
+                                               FontFamily="Georgia, Segoe UI"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </Viewbox>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- Far Right: Hamburger Menu Button (Scales with UI) -->
+            <Button x:Name="HamburgerButton"
+                    Grid.Column="2"
+                    Style="{StaticResource IconButtonStyle}"
+                    ToolTip="Options"
+                    Click="HamburgerButton_Click">
+                <Viewbox Width="{DynamicResource IconInnerSize}"
+                         Height="{DynamicResource IconInnerSize}"
+                         Stretch="Uniform">
+                    <StackPanel Width="16">
+                        <Border Height="2" CornerRadius="1" Background="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                        <Border Height="2" CornerRadius="1" Background="{DynamicResource PrimaryTextBrush}" Margin="0,0,0,4"/>
+                        <Border Height="2" CornerRadius="1" Background="{DynamicResource PrimaryTextBrush}"/>
+                    </StackPanel>
+                </Viewbox>
+            </Button>
+        </Grid>
+
+        <!-- FLOATING PORT INFO HOVER BOX -->
+        <Border x:Name="PortInfoFloatingCard"
+                Grid.Row="0"
+                Grid.RowSpan="2"
+                Panel.ZIndex="30"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,54,50,0"
+                MaxWidth="350"
+                Background="{DynamicResource PopupBackgroundBrush}"
+                BorderBrush="{DynamicResource AccentBorderBrush}"
+                BorderThickness="1.5"
+                CornerRadius="14"
+                Padding="14,12"
+                Opacity="0"
+                Visibility="Collapsed"
+                MouseEnter="PortInfoArea_MouseEnter"
+                MouseLeave="PortInfoArea_MouseLeave">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.38" Color="#000000"/>
+            </Border.Effect>
+            <StackPanel>
+                <TextBox Text="What is this port?"
+                         Style="{StaticResource SelectableTextBoxStyle}"
+                         FontSize="{DynamicResource FontSizeBody}"
+                         FontWeight="SemiBold"
+                         Foreground="{DynamicResource PrimaryTextBrush}"
+                         Margin="0,0,0,5"/>
+                <TextBox Text="An internal communication channel automatically picked by WaddleFree from your PC's unreserved ports so your phone can send sleep signals locally without clashing with other apps. No router setup is required."
+                         Style="{StaticResource SelectableTextBoxStyle}"
+                         FontSize="{DynamicResource FontSizeSmall}"
+                         FontWeight="{DynamicResource BodyFontWeight}"
+                         Foreground="{DynamicResource SecondaryTextBrush}"
+                         Margin="0,0,0,9"/>
+                <TextBlock FontSize="{DynamicResource FontSizeSmall}" FontWeight="SemiBold" TextWrapping="Wrap">
+                    <Hyperlink NavigateUri="https://en.wikipedia.org/wiki/Port_(computer_networking)"
+                               RequestNavigate="PortWikiHyperlink_RequestNavigate"
+                               Foreground="{DynamicResource AccentBrush}"
+                               TextDecorations="Underline">
+                        Learn more about network ports on Wikipedia ↗
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <!-- ROW 1: MIDDLE THREE EVENLY-SIZED ROUNDED TILES (Height & Content scale smoothly with Text Size) -->
+        <UniformGrid Grid.Row="1"
+                     Columns="3"
+                     VerticalAlignment="Center"
+                     MinHeight="{DynamicResource TileMinHeight}"
+                     MaxHeight="{DynamicResource TileMaxHeight}"
+                     Margin="-6,10,-6,10">
+
+            <!-- TILE 1: Connected Mobile Devices Drop-down List Button -->
+            <Grid Margin="6,0">
+                <Button x:Name="DevicesDropdownButton"
+                        Style="{StaticResource TileCardButtonStyle}"
+                        Click="DevicesDropdownButton_Click">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Viewbox Grid.Column="0" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                                <TextBlock Text="Connected mobile devices"
+                                           FontSize="{DynamicResource FontSizeTileHeader}"
+                                           FontWeight="Medium"
+                                           Foreground="{DynamicResource SecondaryTextBrush}"/>
+                            </Viewbox>
+                            <TextBlock Grid.Column="1"
+                                       Text="▾"
+                                       FontSize="{DynamicResource FontSizeBody}"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="6,0,0,0"/>
+                        </Grid>
+
+                        <Viewbox Grid.Row="1"
+                                 StretchDirection="DownOnly"
+                                 HorizontalAlignment="Left"
+                                 VerticalAlignment="Center"
+                                 Margin="0,4">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock x:Name="ConnectedCountText"
+                                           Text="0"
+                                           FontSize="{DynamicResource FontSizeTileValue}"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ConnectedLabelText"
+                                           Text="Devices"
+                                           FontSize="{DynamicResource FontSizeTitle}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource PrimaryTextBrush}"
+                                           Margin="8,2,0,0"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Viewbox>
+
+                        <Viewbox Grid.Row="2" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                            <TextBlock x:Name="DevicesTileHintText"
+                                       Text="Click to view list"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       FontWeight="{DynamicResource BodyFontWeight}"
+                                       Foreground="{DynamicResource SecondaryTextBrush}"/>
+                        </Viewbox>
+                    </Grid>
+                </Button>
+
+                <!-- Dropdown Popup for Connected Mobile Devices -->
+                <Popup x:Name="DevicesPopup"
+                       PlacementTarget="{Binding ElementName=DevicesDropdownButton}"
+                       Placement="Bottom"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       PopupAnimation="Fade"
+                       VerticalOffset="6">
+                    <Border Width="{Binding ActualWidth, ElementName=DevicesDropdownButton}"
+                            MinWidth="240"
+                            MaxHeight="260"
+                            Background="{DynamicResource PopupBackgroundBrush}"
+                            BorderBrush="{DynamicResource AccentBorderBrush}"
+                            BorderThickness="1.5"
+                            CornerRadius="16"
+                            Padding="14">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0"
+                                       Text="Mobile Devices"
+                                       FontSize="{DynamicResource FontSizeSmall}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource PrimaryTextBrush}"
+                                       Margin="2,0,2,8"/>
+
+                            <!-- Empty state (Selectable) -->
+                            <TextBox x:Name="NoDevicesText"
+                                     Grid.Row="1"
+                                     Style="{StaticResource SelectableTextBoxStyle}"
+                                     Text="No mobile devices have connected yet. Enter this PC's IP &amp; MAC address in the mobile app."
+                                     FontSize="{DynamicResource FontSizeSmall}"
+                                     FontWeight="{DynamicResource BodyFontWeight}"
+                                     Foreground="{DynamicResource SecondaryTextBrush}"
+                                     Margin="2,6,2,6"/>
+
+                            <!-- Device List -->
+                            <ScrollViewer x:Name="DevicesListScroll"
+                                          Grid.Row="1"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Visibility="Collapsed">
+                                <ItemsControl x:Name="DevicesItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource FaqAnswerBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource TileBorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="10"
+                                                    Padding="10,8"
+                                                    Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Ellipse Width="8" Height="8"
+                                                             Fill="{DynamicResource AccentBrush}"
+                                                             VerticalAlignment="Center"
+                                                             Margin="0,0,10,0"/>
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBox Text="{Binding Name, Mode=OneWay}"
+                                                                 Style="{StaticResource SelectableTextBoxStyle}"
+                                                                 FontSize="{DynamicResource FontSizeBody}"
+                                                                 FontWeight="SemiBold"
+                                                                 Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                                        <TextBox Text="{Binding DisplaySubtitle, Mode=OneWay}"
+                                                                 Style="{StaticResource SelectableTextBoxStyle}"
+                                                                 FontSize="{DynamicResource FontSizeSmall}"
+                                                                 FontWeight="{DynamicResource BodyFontWeight}"
+                                                                 Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Clear list button -->
+                            <Button x:Name="ClearDevicesButton"
+                                    Grid.Row="2"
+                                    Content="Clear device history"
+                                    Style="{StaticResource ThemePillButtonStyle}"
+                                    HorizontalAlignment="Right"
+                                    Margin="0,4,0,0"
+                                    Visibility="Collapsed"
+                                    Click="ClearDevicesButton_Click"/>
+                        </Grid>
+                    </Border>
+                </Popup>
+            </Grid>
+
+            <!-- TILE 2: IP Address of PC -->
+            <Button x:Name="IpTileButton"
+                    Margin="6,0"
+                    Style="{StaticResource TileCardButtonStyle}"
+                    Click="IpTileButton_Click">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Viewbox Grid.Row="0" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                        <TextBlock Text="IP address of PC"
+                                   FontSize="{DynamicResource FontSizeTileHeader}"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    </Viewbox>
+
+                    <Viewbox Grid.Row="1"
+                             StretchDirection="DownOnly"
+                             HorizontalAlignment="Left"
+                             VerticalAlignment="Center"
+                             Margin="0,4">
+                        <TextBlock x:Name="IpAddressText"
+                                   Text="0.0.0.0"
+                                   FontSize="{DynamicResource FontSizeTileValue}"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    </Viewbox>
+
+                    <Viewbox Grid.Row="2" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                        <TextBlock x:Name="IpCopyHintText"
+                                   Text="Click to copy"
+                                   FontSize="{DynamicResource FontSizeSmall}"
+                                   FontWeight="{DynamicResource BodyFontWeight}"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    </Viewbox>
+                </Grid>
+            </Button>
+
+            <!-- TILE 3: MAC Address of PC -->
+            <Button x:Name="MacTileButton"
+                    Margin="6,0"
+                    Style="{StaticResource TileCardButtonStyle}"
+                    Click="MacTileButton_Click">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Viewbox Grid.Row="0" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                        <TextBlock Text="MAC address of PC"
+                                   FontSize="{DynamicResource FontSizeTileHeader}"
+                                   FontWeight="Medium"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    </Viewbox>
+
+                    <Viewbox Grid.Row="1"
+                             StretchDirection="DownOnly"
+                             HorizontalAlignment="Left"
+                             VerticalAlignment="Center"
+                             Margin="0,4">
+                        <TextBlock x:Name="MacAddressText"
+                                   Text="00:00:00:00:00:00"
+                                   FontSize="{DynamicResource FontSizeTileValue}"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"/>
+                    </Viewbox>
+
+                    <Viewbox Grid.Row="2" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                        <TextBlock x:Name="MacCopyHintText"
+                                   Text="Click to copy"
+                                   FontSize="{DynamicResource FontSizeSmall}"
+                                   FontWeight="{DynamicResource BodyFontWeight}"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    </Viewbox>
+                </Grid>
+            </Button>
+
+        </UniformGrid>
+
+        <!-- UPWARD GUIDE / FAQ POPUP PANEL -->
+        <Border x:Name="GuidePanel"
+                Grid.Row="0"
+                Grid.RowSpan="3"
+                Panel.ZIndex="25"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,54"
+                Width="440"
+                MaxHeight="300"
+                Background="{DynamicResource PopupBackgroundBrush}"
+                BorderBrush="{DynamicResource AccentBorderBrush}"
+                BorderThickness="1.5"
+                CornerRadius="16"
+                Padding="13,13,10,13"
+                Visibility="Collapsed"
+                Opacity="0"
+                RenderTransformOrigin="0,1">
+            <Border.RenderTransform>
+                <TranslateTransform x:Name="GuideSlideTransform" Y="0"/>
+            </Border.RenderTransform>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="22" ShadowDepth="5" Opacity="0.42" Color="#000000"/>
+            </Border.Effect>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="Setup Guide &amp; FAQ"
+                           FontSize="{DynamicResource FontSizeBody}"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource PrimaryTextBrush}"
+                           Margin="4,0,4,9"/>
+
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="0,0,5,0">
+                    <ItemsControl x:Name="FaqItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Background="{DynamicResource TileBackgroundBrush}"
+                                        BorderBrush="{DynamicResource TileBorderBrush}"
+                                        BorderThickness="1.2"
+                                        CornerRadius="11"
+                                        Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <!-- Clickable Question Box -->
+                                        <Button Style="{StaticResource FaqHeaderButtonStyle}"
+                                                Click="FaqItemButton_Click"
+                                                Tag="{Binding}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding Question}"
+                                                           FontSize="{DynamicResource FontSizeBody}"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource PrimaryTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding ChevronSymbol}"
+                                                           FontSize="{DynamicResource FontSizeBody}"
+                                                           FontWeight="Bold"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Button>
+
+                                        <!-- Expandable Explanation Area Below Question -->
+                                        <Border Visibility="{Binding AnswerVisibility}"
+                                                Background="{DynamicResource FaqAnswerBackgroundBrush}"
+                                                BorderBrush="{DynamicResource TileBorderBrush}"
+                                                BorderThickness="0,1,0,0"
+                                                CornerRadius="0,0,10,10"
+                                                Padding="13,10,13,12">
+                                            <TextBox Text="{Binding Answer, Mode=OneWay}"
+                                                     Style="{StaticResource SelectableTextBoxStyle}"
+                                                     FontSize="{DynamicResource FontSizeBody}"
+                                                     FontWeight="{DynamicResource BodyFontWeight}"
+                                                     Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ROW 2: BOTTOM BAR (Encircled '?' Guide Button at Bottom-Left + Selectable Dynamic System Tray Hint in Center) -->
+        <Grid Grid.Row="2" MinHeight="40" Panel.ZIndex="15">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Bottom-Left Encircled '?' Guide Button (Scales with UI) -->
+            <Button x:Name="GuideButton"
+                    Grid.Column="0"
+                    Style="{StaticResource IconButtonStyle}"
+                    ToolTip="Setup Guide &amp; FAQ"
+                    Click="GuideButton_Click">
+                <Viewbox Width="{DynamicResource GuideBadgeSize}"
+                         Height="{DynamicResource GuideBadgeSize}"
+                         Stretch="Uniform">
+                    <Border Width="22"
+                            Height="22"
+                            CornerRadius="11"
+                            BorderBrush="{DynamicResource PrimaryTextBrush}"
+                            BorderThickness="1.7">
+                        <TextBlock Text="?"
+                                   FontSize="13.5"
+                                   FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Margin="0,-1,0,0"/>
+                    </Border>
+                </Viewbox>
+            </Button>
+
+            <!-- Dynamic System Tray Hint Text (Selectable & Copyable) -->
+            <TextBox x:Name="BottomTrayHintText"
+                     Grid.Column="1"
+                     Style="{StaticResource SelectableTextBoxStyle}"
+                     Text="Closing this window minimizes WaddleFree to the system tray so it stays ready for sleep signals."
+                     FontSize="{DynamicResource FontSizeSmall}"
+                     FontWeight="{DynamicResource BodyFontWeight}"
+                     Foreground="{DynamicResource SecondaryTextBrush}"
+                     TextAlignment="Center"
+                     HorizontalAlignment="Center"
+                     VerticalAlignment="Center"
+                     Margin="12,0"/>
+
+            <!-- Balancing spacer on right matching GuideButton width -->
+            <Border Grid.Column="2" Width="{DynamicResource IconButtonSize}"/>
+        </Grid>
+    </Grid>
+</Window>
