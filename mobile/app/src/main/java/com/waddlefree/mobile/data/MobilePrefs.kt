@@ -69,4 +69,19 @@ class MobilePrefs(context: Context) {
     var secondaryTextColor: String
         get() = prefs.getString("secondary_text_color", "Auto") ?: "Auto"
         set(value) = prefs.edit().putString("secondary_text_color", value).apply()
+
+    var autoCheckPreset: String
+        get() = prefs.getString("auto_check_preset", "1 m") ?: "1 m"
+        set(value) = prefs.edit().putString("auto_check_preset", value).apply()
+
+    var customCheckParts: List<String>
+        get() {
+            val raw = prefs.getString("custom_check_smh", "30:00:00") ?: "30:00:00"
+            val parts = raw.split(":")
+            return List(3) { idx -> parts.getOrNull(idx)?.filter { it.isDigit() }?.take(2).orEmpty() }
+        }
+        set(value) {
+            val joined = List(3) { idx -> value.getOrNull(idx)?.filter { it.isDigit() }?.take(2).orEmpty() }.joinToString(":")
+            prefs.edit().putString("custom_check_smh", joined).apply()
+        }
 }

@@ -31,10 +31,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -46,12 +48,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -71,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -83,6 +89,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -140,10 +150,58 @@ data class AppPalette(
 
 private val AllowedTextScales = floatArrayOf(0.50f, 0.75f, 1.00f, 1.25f, 1.50f, 1.75f, 2.00f)
 
+private val AutoCheckPresets = listOf(
+    "None",
+    "30 s",
+    "1 m",
+    "2 m",
+    "5 m",
+    "10 m",
+    "30 m",
+    "45 m",
+    "1 h",
+    "Custom"
+)
+
+private fun computeAutoCheckIntervalMillis(preset: String, customParts: List<String>): Long {
+    return when (preset) {
+        "None" -> 0L
+        "30 s" -> 30_000L
+        "1 m" -> 60_000L
+        "2 m" -> 120_000L
+        "5 m" -> 300_000L
+        "10 m" -> 600_000L
+        "30 m" -> 1_800_000L
+        "45 m" -> 2_700_000L
+        "1 h" -> 3_600_000L
+        "Custom" -> {
+            val ss = customParts.getOrNull(0)?.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
+            val mm = customParts.getOrNull(1)?.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
+            val hh = customParts.getOrNull(2)?.toLongOrNull()?.coerceIn(0L, 99L) ?: 0L
+            val totalSeconds = ss + (mm * 60L) + (hh * 3600L)
+            if (totalSeconds <= 0L) 0L else totalSeconds * 1000L
+        }
+        else -> 60_000L
+    }
+}
+
 @Composable
 fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val density = LocalDensity.current
+
+    // Automatically clear text field focus (removing the flashing '|' bar) whenever the keyboard is hidden
+    val isImeVisible = WindowInsets.ime.getBottom(density) > 0
+    var wasImeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(isImeVisible) {
+        if (wasImeVisible && !isImeVisible) {
+            focusManager.clearFocus()
+        }
+        wasImeVisible = isImeVisible
+    }
 
     var themePref by remember { mutableStateOf(prefs.themePreference) }
     var textScale by remember { mutableFloatStateOf(prefs.textScale.coerceIn(0.50f, 2.00f)) }
@@ -151,6 +209,12 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     var boldBodyText by remember { mutableStateOf(prefs.boldBodyText) }
     var primaryColorSetting by remember { mutableStateOf(prefs.primaryTextColor) }
     var secondaryColorSetting by remember { mutableStateOf(prefs.secondaryTextColor) }
+
+    var autoCheckPreset by remember { mutableStateOf(prefs.autoCheckPreset) }
+    val customCheckParts = remember {
+        val init = prefs.customCheckParts
+        mutableStateListOf(init[0], init[1], init[2])
+    }
 
     val ipOctets = remember {
         val initial = prefs.ipOctets
@@ -161,10 +225,14 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
         mutableStateListOf(initial[0], initial[1], initial[2], initial[3], initial[4], initial[5])
     }
 
+    val fullIp = ipOctets.joinToString(".")
+    val fullMac = macOctets.joinToString(":")
+
     var pcName by remember { mutableStateOf(prefs.lastPcName) }
     var cachedPort by remember { mutableIntStateOf(prefs.cachedPort) }
     var isPcAwake by remember { mutableStateOf(false) }
-    var isChecking by remember { mutableStateOf(false) }
+    var isChecking by remember { mutableStateOf(PcCompanionClient.isValidIpv4(fullIp)) }
+    var hasCompletedInitialCheck by remember { mutableStateOf(false) }
     var feedbackBanner by remember { mutableStateOf("") }
 
     var isOptionsOpen by remember { mutableStateOf(false) }
@@ -200,15 +268,18 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     val uiScale = 0.55f + (0.45f * textScale)
     val bodyWeight = if (boldBodyText) FontWeight.SemiBold else FontWeight.Normal
 
-    val fullIp = ipOctets.joinToString(".")
-    val fullMac = macOctets.joinToString(":")
     val derivedPort = remember(fullMac, cachedPort) {
         if (cachedPort in 1024..49151) cachedPort else PcCompanionClient.deriveInitialZone2Port(fullMac)
     }
 
-    suspend fun refreshStatus() {
+    suspend fun refreshStatus(manualTrigger: Boolean = false) {
         if (!PcCompanionClient.isValidIpv4(fullIp)) {
             isPcAwake = false
+            isChecking = false
+            hasCompletedInitialCheck = true
+            if (manualTrigger) {
+                feedbackBanner = "Enter your PC's local IPv4 address first"
+            }
             return
         }
         isChecking = true
@@ -219,6 +290,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
             cachedPort = cachedPort
         )
         isChecking = false
+        hasCompletedInitialCheck = true
         isPcAwake = res.isAwake
         if (res.isAwake) {
             if (res.pcName.isNotBlank()) {
@@ -229,18 +301,44 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                 cachedPort = res.activePort
                 prefs.cachedPort = res.activePort
             }
+            // Immediately update status text beneath the buttons so stale sleeping/waking text never lingers
+            feedbackBanner = if (manualTrigger) {
+                "✓ Connected to ${pcName.ifBlank { "PC" }}"
+            } else {
+                ""
+            }
+        } else {
+            if (manualTrigger) {
+                feedbackBanner = "PC is currently sleeping or unreachable"
+            } else if (feedbackBanner.startsWith("✓ Connected")) {
+                feedbackBanner = ""
+            }
         }
     }
 
-    // Periodic status check while app is open
+    val customIntervalSignature = customCheckParts.joinToString(":")
+    val intervalMs = remember(autoCheckPreset, customIntervalSignature) {
+        computeAutoCheckIntervalMillis(autoCheckPreset, customCheckParts)
+    }
+
+    // Initial check when IP/MAC changes
     LaunchedEffect(fullIp, fullMac) {
         if (PcCompanionClient.isValidIpv4(fullIp)) {
-            refreshStatus()
+            refreshStatus(manualTrigger = false)
+        } else {
+            isPcAwake = false
+            isChecking = false
+            hasCompletedInitialCheck = true
         }
+    }
+
+    // Configurable automatic status polling loop (respects None, 30 s .. 1 h, and Custom ss:mm:hh)
+    LaunchedEffect(fullIp, fullMac, intervalMs) {
+        if (intervalMs <= 0L) return@LaunchedEffect
         while (true) {
-            delay(5000)
+            delay(intervalMs)
             if (PcCompanionClient.isValidIpv4(fullIp) && !isChecking) {
-                refreshStatus()
+                refreshStatus(manualTrigger = false)
             }
         }
     }
@@ -260,11 +358,11 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
             ),
             MobileFaqItem(
                 question = "How does WaddleFree wake and sleep my PC?",
-                answer = "When your PC is sleeping, tapping 'Wake PC' broadcasts a hardware Magic Packet using the MAC address so your motherboard powers up. Once Windows is awake, tapping 'Put PC to Sleep' signals the desktop companion over your local Wi-Fi to put Windows back to sleep."
+                answer = "When your PC is sleeping, tapping 'Wake PC' broadcasts a hardware Magic Packet using the MAC address so your motherboard powers up. Once Windows is awake, tapping 'Sleep PC' signals the desktop companion over your local network to put Windows back to sleep."
             ),
             MobileFaqItem(
-                question = "Why don't I have to type dots or colons in the IP and MAC boxes?",
-                answer = "The dots (.) for the IP address and colons (:) for the MAC address are permanently built into the UI boxes. As you type each segment, the cursor advances automatically—or you can paste a full IP or MAC address directly into the first box."
+                question = "What if my PC's local IP address changes?",
+                answer = "Most home routers assign the same local IP address to your PC automatically. If your router ever changes it after a reboot, you can either update the IP here or reserve a static DHCP lease for your PC in your router settings."
             ),
             MobileFaqItem(
                 question = "Do my phone and PC need to be on the same home network?",
@@ -274,7 +372,14 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     }
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                })
+            },
         color = palette.windowBg
     ) {
         BoxWithConstraints(
@@ -318,8 +423,9 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                             ) {
                                 val statusText = when {
-                                    isChecking -> "Checking…"
+                                    isChecking && !hasCompletedInitialCheck -> "Checking…"
                                     isPcAwake -> if (pcName.isNotBlank()) "Awake • $pcName" else "Awake • Connected"
+                                    isChecking -> "Checking…"
                                     else -> "PC Sleeping / Offline"
                                 }
                                 Text(
@@ -349,6 +455,17 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                             prefs.themePreference = it
                                         },
                                         onOpenTextSettings = { isTextSettingsOpen = true },
+                                        autoCheckPreset = autoCheckPreset,
+                                        onAutoCheckPresetChange = {
+                                            autoCheckPreset = it
+                                            prefs.autoCheckPreset = it
+                                        },
+                                        customCheckParts = customCheckParts,
+                                        onCustomCheckPartsChanged = {
+                                            prefs.customCheckParts = customCheckParts.toList()
+                                        },
+                                        focusManager = focusManager,
+                                        keyboardController = keyboardController,
                                         derivedPort = derivedPort,
                                         onTogglePortInfo = { isPortInfoOpen = !isPortInfoOpen },
                                         modifier = Modifier.padding(end = 10.dp)
@@ -364,6 +481,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                     .background(palette.tileBg)
                                     .border(1.dp, palette.tileBorder, RoundedCornerShape(12.dp))
                                     .clickable {
+                                        focusManager.clearFocus()
                                         isOptionsOpen = !isOptionsOpen
                                         if (!isOptionsOpen) isPortInfoOpen = false
                                     },
@@ -404,6 +522,17 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                     prefs.themePreference = it
                                 },
                                 onOpenTextSettings = { isTextSettingsOpen = true },
+                                autoCheckPreset = autoCheckPreset,
+                                onAutoCheckPresetChange = {
+                                    autoCheckPreset = it
+                                    prefs.autoCheckPreset = it
+                                },
+                                customCheckParts = customCheckParts,
+                                onCustomCheckPartsChanged = {
+                                    prefs.customCheckParts = customCheckParts.toList()
+                                },
+                                focusManager = focusManager,
+                                keyboardController = keyboardController,
                                 derivedPort = derivedPort,
                                 onTogglePortInfo = { isPortInfoOpen = !isPortInfoOpen },
                                 modifier = Modifier
@@ -466,6 +595,48 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
 
                 // --- MIDDLE: THREE TILES (Side-by-side on wide screens, vertical scroll on portrait phones) ---
                 val centerScrollState = rememberScrollState()
+                val onWakeAction: () -> Unit = {
+                    focusManager.clearFocus()
+                    scope.launch {
+                        val ok = PcCompanionClient.sendWakeOnLanMagicPacket(fullIp, fullMac)
+                        if (!ok) {
+                            feedbackBanner = "Enter a valid 12-character MAC address first"
+                        } else {
+                            feedbackBanner = "✓ Magic Packet sent! Waiting for PC to wake…"
+                            // Poll every 2 seconds for up to 16 seconds so the moment the PC wakes up, the UI updates immediately
+                            for (attempt in 1..8) {
+                                delay(2000)
+                                refreshStatus(manualTrigger = false)
+                                if (isPcAwake) {
+                                    feedbackBanner = "✓ Connected to ${pcName.ifBlank { "PC" }}"
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val onSleepAction: () -> Unit = {
+                    focusManager.clearFocus()
+                    scope.launch {
+                        val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
+                        if (ok) {
+                            isPcAwake = false
+                            feedbackBanner = "✓ Sleep signal sent to PC"
+                        } else {
+                            feedbackBanner = "Could not reach PC—check IP & Wi-Fi"
+                            refreshStatus(manualTrigger = false)
+                        }
+                    }
+                }
+
+                val onRefreshAction: () -> Unit = {
+                    focusManager.clearFocus()
+                    scope.launch {
+                        refreshStatus(manualTrigger = true)
+                    }
+                }
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -489,40 +660,20 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 pcName = pcName,
                                 isPcAwake = isPcAwake,
                                 isChecking = isChecking,
+                                hasCompletedInitialCheck = hasCompletedInitialCheck,
                                 feedbackBanner = feedbackBanner,
-                                onWakeClick = {
-                                    scope.launch {
-                                        val ok = PcCompanionClient.sendWakeOnLanMagicPacket(fullIp, fullMac)
-                                        feedbackBanner = if (ok) "✓ Magic Packet sent! Waking PC…" else "Enter a valid 12-character MAC address first"
-                                        delay(2200)
-                                        refreshStatus()
-                                    }
-                                },
-                                onSleepClick = {
-                                    scope.launch {
-                                        val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
-                                        if (ok) {
-                                            isPcAwake = false
-                                            feedbackBanner = "✓ Sleep signal sent to PC"
-                                        } else {
-                                            feedbackBanner = "Could not reach PC—check IP & Wi-Fi"
-                                        }
-                                    }
-                                },
-                                onRefreshClick = {
-                                    scope.launch {
-                                        refreshStatus()
-                                        feedbackBanner = if (isPcAwake) "✓ PC is Awake" else "PC is currently sleeping or unreachable"
-                                    }
-                                }
+                                onWakeClick = onWakeAction,
+                                onSleepClick = onSleepAction,
+                                onRefreshClick = onRefreshAction
                             )
 
                             IpAddressSegmentedTile(
                                 modifier = Modifier.weight(1f),
                                 palette = palette,
                                 textScale = textScale,
-                                bodyWeight = bodyWeight,
                                 ipOctets = ipOctets,
+                                focusManager = focusManager,
+                                keyboardController = keyboardController,
                                 onOctetsChanged = {
                                     prefs.ipOctets = ipOctets.toList()
                                 }
@@ -532,8 +683,9 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 modifier = Modifier.weight(1f),
                                 palette = palette,
                                 textScale = textScale,
-                                bodyWeight = bodyWeight,
                                 macOctets = macOctets,
+                                focusManager = focusManager,
+                                keyboardController = keyboardController,
                                 onOctetsChanged = {
                                     prefs.macOctets = macOctets.toList()
                                 }
@@ -554,40 +706,20 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 pcName = pcName,
                                 isPcAwake = isPcAwake,
                                 isChecking = isChecking,
+                                hasCompletedInitialCheck = hasCompletedInitialCheck,
                                 feedbackBanner = feedbackBanner,
-                                onWakeClick = {
-                                    scope.launch {
-                                        val ok = PcCompanionClient.sendWakeOnLanMagicPacket(fullIp, fullMac)
-                                        feedbackBanner = if (ok) "✓ Magic Packet sent! Waking PC…" else "Enter a valid 12-character MAC address first"
-                                        delay(2200)
-                                        refreshStatus()
-                                    }
-                                },
-                                onSleepClick = {
-                                    scope.launch {
-                                        val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
-                                        if (ok) {
-                                            isPcAwake = false
-                                            feedbackBanner = "✓ Sleep signal sent to PC"
-                                        } else {
-                                            feedbackBanner = "Could not reach PC—check IP & Wi-Fi"
-                                        }
-                                    }
-                                },
-                                onRefreshClick = {
-                                    scope.launch {
-                                        refreshStatus()
-                                        feedbackBanner = if (isPcAwake) "✓ PC is Awake" else "PC is currently sleeping or unreachable"
-                                    }
-                                }
+                                onWakeClick = onWakeAction,
+                                onSleepClick = onSleepAction,
+                                onRefreshClick = onRefreshAction
                             )
 
                             IpAddressSegmentedTile(
                                 modifier = Modifier.fillMaxWidth(),
                                 palette = palette,
                                 textScale = textScale,
-                                bodyWeight = bodyWeight,
                                 ipOctets = ipOctets,
+                                focusManager = focusManager,
+                                keyboardController = keyboardController,
                                 onOctetsChanged = {
                                     prefs.ipOctets = ipOctets.toList()
                                 }
@@ -597,8 +729,9 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 modifier = Modifier.fillMaxWidth(),
                                 palette = palette,
                                 textScale = textScale,
-                                bodyWeight = bodyWeight,
                                 macOctets = macOctets,
+                                focusManager = focusManager,
+                                keyboardController = keyboardController,
                                 onOctetsChanged = {
                                     prefs.macOctets = macOctets.toList()
                                 }
@@ -711,7 +844,10 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(palette.tileBg)
                                 .border(1.dp, palette.tileBorder, RoundedCornerShape(12.dp))
-                                .clickable { isGuideOpen = !isGuideOpen },
+                                .clickable {
+                                    focusManager.clearFocus()
+                                    isGuideOpen = !isGuideOpen
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
@@ -735,7 +871,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                                 .padding(horizontal = 12.dp)
                         ) {
                             Text(
-                                text = "Connected locally over Wi-Fi • Dots and colons are built into the IP & MAC fields.",
+                                text = "Communicates directly with your PC over your local home network.",
                                 fontSize = (11.5f * textScale).sp,
                                 fontWeight = bodyWeight,
                                 color = palette.secondaryText,
@@ -805,10 +941,19 @@ private fun OptionsMenuBarContent(
     themePref: String,
     onThemeChange: (String) -> Unit,
     onOpenTextSettings: () -> Unit,
+    autoCheckPreset: String,
+    onAutoCheckPresetChange: (String) -> Unit,
+    customCheckParts: MutableList<String>,
+    onCustomCheckPartsChanged: () -> Unit,
+    focusManager: FocusManager,
+    keyboardController: SoftwareKeyboardController?,
     derivedPort: Int,
     onTogglePortInfo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var isIntervalDropdownExpanded by remember { mutableStateOf(false) }
+    val customFocusRequesters = remember { List(3) { FocusRequester() } }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
@@ -928,6 +1073,161 @@ private fun OptionsMenuBarContent(
                     .background(palette.tileBorder)
             )
 
+            // Auto-Check Status Interval Dropdown + Custom ss:mm:hh Input
+            Text(
+                text = "Auto-Check",
+                fontSize = (12f * textScale).sp,
+                fontWeight = FontWeight.Medium,
+                color = palette.secondaryText,
+                modifier = Modifier.padding(end = 6.dp)
+            )
+
+            Box {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(palette.subtleSurface)
+                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                        .clickable {
+                            focusManager.clearFocus()
+                            isIntervalDropdownExpanded = true
+                        }
+                        .padding(horizontal = 9.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = autoCheckPreset,
+                        fontSize = (12f * textScale).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.primaryText
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "▾",
+                        fontSize = (11f * textScale).sp,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.accent
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = isIntervalDropdownExpanded,
+                    onDismissRequest = { isIntervalDropdownExpanded = false },
+                    modifier = Modifier
+                        .background(palette.popupBg)
+                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                ) {
+                    AutoCheckPresets.forEach { preset ->
+                        val isSelected = autoCheckPreset == preset
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (preset == "Custom") "Custom (ss:mm:hh)" else preset,
+                                    fontSize = (12.5f * textScale).sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) palette.accent else palette.primaryText
+                                )
+                            },
+                            onClick = {
+                                onAutoCheckPresetChange(preset)
+                                isIntervalDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (autoCheckPreset == "Custom") {
+                Spacer(modifier = Modifier.width(6.dp))
+                val placeholders = listOf("ss", "mm", "hh")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(palette.subtleSurface)
+                        .border(1.dp, palette.tileBorder, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                ) {
+                    for (idx in 0 until 3) {
+                        BasicTextField(
+                            value = customCheckParts[idx],
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(2)
+                                val num = digits.toIntOrNull()
+                                val maxAllowed = if (idx < 2) 59 else 99
+                                val clamped = if (num != null && num > maxAllowed) maxAllowed.toString() else digits
+                                customCheckParts[idx] = clamped
+                                onCustomCheckPartsChanged()
+
+                                if (clamped.length == 2) {
+                                    if (idx < 2) {
+                                        customFocusRequesters[idx + 1].requestFocus()
+                                    } else {
+                                        focusManager.clearFocus()
+                                        keyboardController?.hide()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .width((28f * uiScale).dp)
+                                .focusRequester(customFocusRequesters[idx])
+                                .clip(RoundedCornerShape(5.dp))
+                                .background(palette.faqAnswerBg)
+                                .padding(vertical = 3.dp, horizontal = 2.dp),
+                            textStyle = TextStyle(
+                                fontSize = (11.5f * textScale).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.primaryText,
+                                textAlign = TextAlign.Center
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(palette.accent),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = if (idx < 2) ImeAction.Next else ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                }
+                            ),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (customCheckParts[idx].isEmpty()) {
+                                        Text(
+                                            text = placeholders[idx],
+                                            fontSize = (10.5f * textScale).sp,
+                                            color = palette.secondaryText.copy(alpha = 0.5f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+                        if (idx < 2) {
+                            Text(
+                                text = ":",
+                                fontSize = (12f * textScale).sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.accent,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Divider
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 10.dp)
+                    .width(1.dp)
+                    .height((18f * uiScale).dp)
+                    .background(palette.tileBorder)
+            )
+
             // Port + Encircled 'i' Icon
             Text(
                 text = "Port: $derivedPort",
@@ -966,6 +1266,7 @@ private fun PcConnectionTile(
     pcName: String,
     isPcAwake: Boolean,
     isChecking: Boolean,
+    hasCompletedInitialCheck: Boolean,
     feedbackBanner: String,
     onWakeClick: () -> Unit,
     onSleepClick: () -> Unit,
@@ -995,11 +1296,11 @@ private fun PcConnectionTile(
                 modifier = Modifier
                     .clip(RoundedCornerShape(7.dp))
                     .background(palette.subtleSurface)
-                    .clickable { onRefreshClick() }
+                    .clickable(enabled = !isChecking) { onRefreshClick() }
                     .padding(horizontal = 9.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = if (isChecking) "Pinging…" else "Check Status",
+                    text = if (isChecking) "Checking…" else "Check Status",
                     fontSize = (11.5f * textScale).sp,
                     fontWeight = FontWeight.SemiBold,
                     color = palette.accent
@@ -1009,10 +1310,11 @@ private fun PcConnectionTile(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             val displayPc = when {
+                !hasCompletedInitialCheck && isChecking -> "Checking PC…"
                 isPcAwake && pcName.isNotBlank() -> pcName
-                pcName.isNotBlank() -> "$pcName (Sleeping)"
                 isPcAwake -> "PC Online"
-                else -> "Sleeping / Ready to Wake"
+                pcName.isNotBlank() -> "$pcName (Sleeping)"
+                else -> "Sleeping / Offline"
             }
             Text(
                 text = displayPc,
@@ -1030,18 +1332,25 @@ private fun PcConnectionTile(
             }
         }
 
-        // Primary Wake / Sleep Action Buttons
+        // Primary Wake / Sleep Action Buttons:
+        // When PC is awake -> Wake PC is non-interactable (uncolored) & Sleep PC is interactable (accent colored), and vice versa.
+        val wakeEnabled = !isPcAwake
+        val sleepEnabled = isPcAwake
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
                 onClick = onWakeClick,
+                enabled = wakeEnabled,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (!isPcAwake) palette.accent else palette.subtleSurface,
-                    contentColor = if (!isPcAwake) palette.onAccent else palette.primaryText
+                    containerColor = palette.accent,
+                    contentColor = palette.onAccent,
+                    disabledContainerColor = palette.subtleSurface,
+                    disabledContentColor = palette.secondaryText.copy(alpha = 0.5f)
                 ),
                 contentPadding = PaddingValues(vertical = 10.dp, horizontal = 12.dp)
             ) {
@@ -1054,11 +1363,14 @@ private fun PcConnectionTile(
 
             Button(
                 onClick = onSleepClick,
+                enabled = sleepEnabled,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isPcAwake) palette.accent else palette.subtleSurface,
-                    contentColor = if (isPcAwake) palette.onAccent else palette.primaryText
+                    containerColor = palette.accent,
+                    contentColor = palette.onAccent,
+                    disabledContainerColor = palette.subtleSurface,
+                    disabledContentColor = palette.secondaryText.copy(alpha = 0.5f)
                 ),
                 contentPadding = PaddingValues(vertical = 10.dp, horizontal = 12.dp)
             ) {
@@ -1070,15 +1382,21 @@ private fun PcConnectionTile(
             }
         }
 
-        if (feedbackBanner.isNotBlank()) {
-            SelectionContainer {
-                Text(
-                    text = feedbackBanner,
-                    fontSize = (12f * textScale).sp,
-                    fontWeight = bodyWeight,
-                    color = palette.secondaryText
-                )
-            }
+        // Dynamic status text beneath buttons that updates immediately on connection state changes
+        val bottomStatusLine = when {
+            feedbackBanner.isNotBlank() -> feedbackBanner
+            !hasCompletedInitialCheck && isChecking -> "Checking connection to PC…"
+            isPcAwake -> "Connected • Ready to put PC to sleep"
+            else -> "PC is sleeping or offline • Ready to wake"
+        }
+
+        SelectionContainer {
+            Text(
+                text = bottomStatusLine,
+                fontSize = (12f * textScale).sp,
+                fontWeight = bodyWeight,
+                color = palette.secondaryText
+            )
         }
     }
 }
@@ -1088,8 +1406,9 @@ private fun IpAddressSegmentedTile(
     modifier: Modifier,
     palette: AppPalette,
     textScale: Float,
-    bodyWeight: FontWeight,
     ipOctets: MutableList<String>,
+    focusManager: FocusManager,
+    keyboardController: SoftwareKeyboardController?,
     onOctetsChanged: () -> Unit
 ) {
     val focusRequesters = remember { List(4) { FocusRequester() } }
@@ -1109,7 +1428,6 @@ private fun IpAddressSegmentedTile(
             color = palette.secondaryText
         )
 
-        // 4 Octet Inputs with the 3 dots (.) permanently part of the UI
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1127,7 +1445,8 @@ private fun IpAddressSegmentedTile(
                                     ipOctets[k] = split[k].filter { it.isDigit() }.take(3)
                                 }
                                 onOctetsChanged()
-                                focusRequesters[3].requestFocus()
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
                                 return@BasicTextField
                             }
                         }
@@ -1138,8 +1457,14 @@ private fun IpAddressSegmentedTile(
                         ipOctets[i] = clamped
                         onOctetsChanged()
 
-                        if (clamped.length == 3 && i < 3) {
-                            focusRequesters[i + 1].requestFocus()
+                        if (clamped.length == 3) {
+                            if (i < 3) {
+                                focusRequesters[i + 1].requestFocus()
+                            } else {
+                                // Final character inputted -> dismiss keyboard and remove flashing cursor
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            }
                         }
                     },
                     modifier = Modifier
@@ -1160,6 +1485,15 @@ private fun IpAddressSegmentedTile(
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Number,
                         imeAction = if (i < 3) ImeAction.Next else ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = {
+                            if (i < 3) focusRequesters[i + 1].requestFocus()
+                        },
+                        onDone = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        }
                     )
                 )
 
@@ -1174,13 +1508,6 @@ private fun IpAddressSegmentedTile(
                 }
             }
         }
-
-        Text(
-            text = "Dots are built in • Type digits or paste full IP",
-            fontSize = (12f * textScale).sp,
-            fontWeight = bodyWeight,
-            color = palette.secondaryText
-        )
     }
 }
 
@@ -1189,8 +1516,9 @@ private fun MacAddressSegmentedTile(
     modifier: Modifier,
     palette: AppPalette,
     textScale: Float,
-    bodyWeight: FontWeight,
     macOctets: MutableList<String>,
+    focusManager: FocusManager,
+    keyboardController: SoftwareKeyboardController?,
     onOctetsChanged: () -> Unit
 ) {
     val focusRequesters = remember { List(6) { FocusRequester() } }
@@ -1210,7 +1538,6 @@ private fun MacAddressSegmentedTile(
             color = palette.secondaryText
         )
 
-        // 6 Hex Pairs with the 5 colons (:) permanently part of the UI
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -1227,7 +1554,8 @@ private fun MacAddressSegmentedTile(
                                 macOctets[k] = hexOnly.substring(k * 2, k * 2 + 2)
                             }
                             onOctetsChanged()
-                            focusRequesters[5].requestFocus()
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
                             return@BasicTextField
                         }
 
@@ -1235,8 +1563,14 @@ private fun MacAddressSegmentedTile(
                         macOctets[i] = pair
                         onOctetsChanged()
 
-                        if (pair.length == 2 && i < 5) {
-                            focusRequesters[i + 1].requestFocus()
+                        if (pair.length == 2) {
+                            if (i < 5) {
+                                focusRequesters[i + 1].requestFocus()
+                            } else {
+                                // Final character inputted -> dismiss keyboard and remove flashing cursor
+                                focusManager.clearFocus()
+                                keyboardController?.hide()
+                            }
                         }
                     },
                     modifier = Modifier
@@ -1258,6 +1592,15 @@ private fun MacAddressSegmentedTile(
                         capitalization = KeyboardCapitalization.Characters,
                         keyboardType = KeyboardType.Ascii,
                         imeAction = if (i < 5) ImeAction.Next else ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = {
+                            if (i < 5) focusRequesters[i + 1].requestFocus()
+                        },
+                        onDone = {
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                        }
                     )
                 )
 
@@ -1272,13 +1615,6 @@ private fun MacAddressSegmentedTile(
                 }
             }
         }
-
-        Text(
-            text = "Colons are built in • Auto-advances every 2 chars",
-            fontSize = (12f * textScale).sp,
-            fontWeight = bodyWeight,
-            color = palette.secondaryText
-        )
     }
 }
 
