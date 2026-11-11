@@ -76,12 +76,12 @@ class MobilePrefs(context: Context) {
 
     var customCheckParts: List<String>
         get() {
-            val raw = prefs.getString("custom_check_smh", "30:00:00") ?: "30:00:00"
+            val raw = prefs.getString("custom_check_hms", "00:00:30") ?: "00:00:30"
             val parts = raw.split(":")
-            return List(3) { idx -> parts.getOrNull(idx)?.filter { it.isDigit() }?.take(2).orEmpty() }
+            return List(3) { idx -> parts.getOrNull(idx)?.filter { it.isDigit() }?.take(4).orEmpty() }
         }
         set(value) {
-            val joined = List(3) { idx -> value.getOrNull(idx)?.filter { it.isDigit() }?.take(2).orEmpty() }.joinToString(":")
-            prefs.edit().putString("custom_check_smh", joined).apply()
+            val joined = List(3) { idx -> value.getOrNull(idx)?.filter { it.isDigit() }?.take(4).orEmpty() }.joinToString(":")
+            prefs.edit().putString("custom_check_hms", joined).apply()
         }
 }

@@ -86,6 +86,8 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -175,13 +177,51 @@ private fun computeAutoCheckIntervalMillis(preset: String, customParts: List<Str
         "45 m" -> 2_700_000L
         "1 h" -> 3_600_000L
         "Custom" -> {
-            val ss = customParts.getOrNull(0)?.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
-            val mm = customParts.getOrNull(1)?.toLongOrNull()?.coerceIn(0L, 59L) ?: 0L
-            val hh = customParts.getOrNull(2)?.toLongOrNull()?.coerceIn(0L, 99L) ?: 0L
-            val totalSeconds = ss + (mm * 60L) + (hh * 3600L)
+            // Left-to-right: hh : mm : ss
+            val hh = customParts.getOrNull(0)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val mm = customParts.getOrNull(1)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val ss = customParts.getOrNull(2)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+            val totalSeconds = (hh * 3600L) + (mm * 60L) + ss
             if (totalSeconds <= 0L) 0L else totalSeconds * 1000L
         }
         else -> 60_000L
+    }
+}
+
+/**
+ * Converts any overflow in seconds or minutes (e.g. 120s -> 00:02:00, 140s -> 00:02:20)
+ * into clean 2-digit hh:mm:ss slots when confirmed.
+ */
+private fun normalizeCustomHmsParts(parts: MutableList<String>, onChanged: () -> Unit) {
+    if (parts.size < 3) return
+    val hh = parts[0].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    val mm = parts[1].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    val ss = parts[2].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    val totalSeconds = (hh * 3600L) + (mm * 60L) + ss
+    if (totalSeconds <= 0L) {
+        if (parts.any { it.isNotEmpty() }) {
+            parts[0] = "00"
+            parts[1] = "00"
+            parts[2] = "00"
+            onChanged()
+        }
+        return
+    }
+    val maxTotalSeconds = (99L * 3600L) + (59L * 60L) + 59L
+    val clampedTotal = totalSeconds.coerceAtMost(maxTotalSeconds)
+    val normHh = clampedTotal / 3600L
+    val remAfterHours = clampedTotal % 3600L
+    val normMm = remAfterHours / 60L
+    val normSs = remAfterHours % 60L
+
+    val newHh = String.format("%02d", normHh)
+    val newMm = String.format("%02d", normMm)
+    val newSs = String.format("%02d", normSs)
+    if (parts[0] != newHh || parts[1] != newMm || parts[2] != newSs) {
+        parts[0] = newHh
+        parts[1] = newMm
+        parts[2] = newSs
+        onChanged()
     }
 }
 
@@ -193,11 +233,20 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     val keyboardController = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
 
-    // Automatically clear text field focus (removing the flashing '|' bar) whenever the keyboard is hidden
+    var autoCheckPreset by remember { mutableStateOf(prefs.autoCheckPreset) }
+    val customCheckParts = remember {
+        val init = prefs.customCheckParts
+        mutableStateListOf(init[0], init[1], init[2])
+    }
+
+    // Automatically clear text field focus (removing the flashing '|' bar) and normalize hh:mm:ss whenever the keyboard is hidden
     val isImeVisible = WindowInsets.ime.getBottom(density) > 0
     var wasImeVisible by remember { mutableStateOf(false) }
     LaunchedEffect(isImeVisible) {
         if (wasImeVisible && !isImeVisible) {
+            normalizeCustomHmsParts(customCheckParts) {
+                prefs.customCheckParts = customCheckParts.toList()
+            }
             focusManager.clearFocus()
         }
         wasImeVisible = isImeVisible
@@ -209,12 +258,6 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     var boldBodyText by remember { mutableStateOf(prefs.boldBodyText) }
     var primaryColorSetting by remember { mutableStateOf(prefs.primaryTextColor) }
     var secondaryColorSetting by remember { mutableStateOf(prefs.secondaryTextColor) }
-
-    var autoCheckPreset by remember { mutableStateOf(prefs.autoCheckPreset) }
-    val customCheckParts = remember {
-        val init = prefs.customCheckParts
-        mutableStateListOf(init[0], init[1], init[2])
-    }
 
     val ipOctets = remember {
         val initial = prefs.ipOctets
@@ -376,6 +419,9 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectTapGestures(onTap = {
+                    normalizeCustomHmsParts(customCheckParts) {
+                        prefs.customCheckParts = customCheckParts.toList()
+                    }
                     focusManager.clearFocus()
                     keyboardController?.hide()
                 })
@@ -866,18 +912,54 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                             }
                         }
 
-                        SelectionContainer(
+                        val githubIconPath = remember {
+                            PathParser().parsePathString(
+                                "M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 " +
+                                    "0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-" +
+                                    ".908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-" +
+                                    ".647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-" +
+                                    ".253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 " +
+                                    "2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 " +
+                                    "1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 " +
+                                    "2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                            ).toPath()
+                        }
+
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(horizontal = 12.dp)
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Communicates directly with your PC over your local home network.",
-                                fontSize = (11.5f * textScale).sp,
-                                fontWeight = bodyWeight,
-                                color = palette.secondaryText,
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val intent = Intent(
+                                            Intent.ACTION_VIEW,
+                                            Uri.parse("https://github.com/bit-hero-333/WaddleFree")
+                                        )
+                                        context.startActivity(intent)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Canvas(modifier = Modifier.size((16f * uiScale).dp)) {
+                                    val s = size.width / 24f
+                                    scale(scaleX = s, scaleY = s, pivot = Offset.Zero) {
+                                        drawPath(path = githubIconPath, color = palette.accent)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "github.com/bit-hero-333/WaddleFree",
+                                    fontSize = (12f * textScale).sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = palette.accent,
+                                    textDecoration = TextDecoration.Underline
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(iconBtnSize))
@@ -1104,7 +1186,7 @@ private fun OptionsMenuBarContent(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = if (preset == "Custom") "Custom (ss:mm:hh)" else preset,
+                                text = if (preset == "Custom") "Custom (hh:mm:ss)" else preset,
                                 fontSize = (12.5f * textScale).sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) palette.accent else palette.primaryText
@@ -1121,7 +1203,7 @@ private fun OptionsMenuBarContent(
 
         if (autoCheckPreset == "Custom") {
             Spacer(modifier = Modifier.width(6.dp))
-            val placeholders = listOf("ss", "mm", "hh")
+            val placeholders = listOf("hh", "mm", "ss")
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -1134,24 +1216,15 @@ private fun OptionsMenuBarContent(
                     BasicTextField(
                         value = customCheckParts[idx],
                         onValueChange = { raw ->
-                            val digits = raw.filter { it.isDigit() }.take(2)
-                            val num = digits.toIntOrNull()
-                            val maxAllowed = if (idx < 2) 59 else 99
-                            val clamped = if (num != null && num > maxAllowed) maxAllowed.toString() else digits
-                            customCheckParts[idx] = clamped
+                            val digits = raw.filter { it.isDigit() }
+                            val cleaned = digits.trimStart('0').ifEmpty {
+                                if (digits.isNotEmpty()) "0" else ""
+                            }.take(4)
+                            customCheckParts[idx] = cleaned
                             onCustomCheckPartsChanged()
-
-                            if (clamped.length == 2) {
-                                if (idx < 2) {
-                                    customFocusRequesters[idx + 1].requestFocus()
-                                } else {
-                                    focusManager.clearFocus()
-                                    keyboardController?.hide()
-                                }
-                            }
                         },
                         modifier = Modifier
-                            .width((28f * uiScale).dp)
+                            .width((30f * uiScale).dp)
                             .focusRequester(customFocusRequesters[idx])
                             .clip(RoundedCornerShape(5.dp))
                             .background(palette.faqAnswerBg)
@@ -1169,7 +1242,12 @@ private fun OptionsMenuBarContent(
                             imeAction = if (idx < 2) ImeAction.Next else ImeAction.Done
                         ),
                         keyboardActions = KeyboardActions(
+                            onNext = {
+                                normalizeCustomHmsParts(customCheckParts, onCustomCheckPartsChanged)
+                                if (idx < 2) customFocusRequesters[idx + 1].requestFocus()
+                            },
                             onDone = {
+                                normalizeCustomHmsParts(customCheckParts, onCustomCheckPartsChanged)
                                 focusManager.clearFocus()
                                 keyboardController?.hide()
                             }
