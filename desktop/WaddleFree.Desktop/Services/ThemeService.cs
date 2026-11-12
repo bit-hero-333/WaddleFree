@@ -170,6 +170,17 @@ namespace WaddleFree.Desktop.Services
             {
                 return key switch
                 {
+                    "oled" => new PresetPalette(
+                        WindowBg: MediaColor.FromRgb(0x00, 0x00, 0x00),
+                        TileBg: highContrast ? MediaColor.FromRgb(0x00, 0x00, 0x00) : MediaColor.FromRgb(0x08, 0x08, 0x0A),
+                        TileHoverBg: MediaColor.FromRgb(0x14, 0x14, 0x18),
+                        MenuSurface: MediaColor.FromRgb(0x0A, 0x0A, 0x0E),
+                        PopupBg: MediaColor.FromRgb(0x08, 0x08, 0x0B),
+                        FaqAnswerBg: MediaColor.FromRgb(0x00, 0x00, 0x00),
+                        PrimaryText: MediaColor.FromRgb(0xFF, 0xFF, 0xFF),
+                        SecondaryText: highContrast ? MediaColor.FromRgb(0xF8, 0xF9, 0xFA) : MediaColor.FromRgb(0xD8, 0xDA, 0xE2),
+                        AccentOverride: null),
+
                     "ocean" => new PresetPalette(
                         WindowBg: highContrast ? MediaColor.FromRgb(0x09, 0x10, 0x1E) : MediaColor.FromRgb(0x0F, 0x17, 0x2A),
                         TileBg: highContrast ? MediaColor.FromRgb(0x15, 0x22, 0x38) : MediaColor.FromRgb(0x1E, 0x29, 0x3B),

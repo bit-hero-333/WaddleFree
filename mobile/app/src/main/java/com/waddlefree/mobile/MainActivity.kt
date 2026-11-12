@@ -1997,11 +1997,12 @@ private fun TextSettingsDialog(
                     color = palette.primaryText
                 )
 
-                // 1. Named Theme Presets (Names & Palettes adapt dynamically to Dark vs Light mode)
+                // 1. Named Theme Presets (Names & Palettes adapt dynamically to Dark vs Light mode; OLED only in Dark mode)
                 val presetItems = remember(isDark) {
                     if (isDark) {
                         listOf(
                             "Default" to "Default",
+                            "OLED" to "OLED",
                             "Ocean" to "Midnight",
                             "Amethyst" to "Amethyst",
                             "Emerald" to "Emerald",
@@ -2016,6 +2017,11 @@ private fun TextSettingsDialog(
                             "Ember" to "Warm Sand"
                         )
                     }
+                }
+                val effectivePreset = if (!isDark && themePreset.equals("OLED", ignoreCase = true)) {
+                    "Default"
+                } else {
+                    themePreset
                 }
 
                 Column(
@@ -2058,7 +2064,7 @@ private fun TextSettingsDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         presetItems.forEach { (key, displayName) ->
-                            val active = themePreset.equals(key, ignoreCase = true)
+                            val active = effectivePreset.equals(key, ignoreCase = true)
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
@@ -2583,6 +2589,16 @@ private fun getPresetColors(presetKey: String, isDark: Boolean, highContrast: Bo
     val key = presetKey.trim().lowercase()
     return if (isDark) {
         when (key) {
+            "oled" -> PresetColors(
+                windowBg = Color(0xFF000000),
+                tileBg = if (highContrast) Color(0xFF000000) else Color(0xFF08080A),
+                menuSurface = Color(0xFF0A0A0E),
+                popupBg = Color(0xFF08080B),
+                faqAnswerBg = Color(0xFF000000),
+                primaryText = Color(0xFFFFFFFF),
+                secondaryText = if (highContrast) Color(0xFFF8F9FA) else Color(0xFFD8DAE2),
+                accentOverride = null
+            )
             "ocean" -> PresetColors(
                 windowBg = if (highContrast) Color(0xFF09101E) else Color(0xFF0F172A),
                 tileBg = if (highContrast) Color(0xFF152238) else Color(0xFF1E293B),

@@ -66,19 +66,27 @@ namespace WaddleFree.Desktop
             bool isDark = ThemeService.IsEffectiveDarkMode(_settings);
 
             // Dynamically change theme preset names based on Dark vs Light mode
+            // OLED is only available when Dark mode is active
             PresetModeLabel.Text = isDark ? "Dark Mode Palettes" : "Light Mode Palettes";
             PresetDefaultBtn.Content = "Default";
+            PresetOledBtn.Content = "OLED";
+            PresetOledBtn.Visibility = isDark ? Visibility.Visible : Visibility.Collapsed;
             PresetOceanBtn.Content = isDark ? "Midnight" : "Daybreak";
             PresetAmethystBtn.Content = isDark ? "Amethyst" : "Lavender";
             PresetEmeraldBtn.Content = isDark ? "Emerald" : "Sage";
             PresetEmberBtn.Content = isDark ? "Ember" : "Warm Sand";
 
             string preset = (_settings.ThemePreset ?? "Default").Trim();
-            StylePill(PresetDefaultBtn, string.Equals(preset, "Default", StringComparison.OrdinalIgnoreCase));
-            StylePill(PresetOceanBtn, string.Equals(preset, "Ocean", StringComparison.OrdinalIgnoreCase));
-            StylePill(PresetAmethystBtn, string.Equals(preset, "Amethyst", StringComparison.OrdinalIgnoreCase));
-            StylePill(PresetEmeraldBtn, string.Equals(preset, "Emerald", StringComparison.OrdinalIgnoreCase));
-            StylePill(PresetEmberBtn, string.Equals(preset, "Ember", StringComparison.OrdinalIgnoreCase));
+            string effectivePreset = (!isDark && string.Equals(preset, "OLED", StringComparison.OrdinalIgnoreCase))
+                ? "Default"
+                : preset;
+
+            StylePill(PresetDefaultBtn, string.Equals(effectivePreset, "Default", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetOledBtn, isDark && string.Equals(effectivePreset, "OLED", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetOceanBtn, string.Equals(effectivePreset, "Ocean", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetAmethystBtn, string.Equals(effectivePreset, "Amethyst", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetEmeraldBtn, string.Equals(effectivePreset, "Emerald", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetEmberBtn, string.Equals(effectivePreset, "Ember", StringComparison.OrdinalIgnoreCase));
 
             RenderSteppedSizeSlider();
 
