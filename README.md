@@ -10,3 +10,5 @@ You just install both apps on your PC and mobile device to wake up your PC and p
 - **Local Connection**: Connects your PC directly to your mobile devices locally (via local IP and MAC address).
 - **Quick Settings Tile**: Support for Android's notification shade tile to wake/sleep your PC with one tap.
 - **Unsigned Executable Notice**: The Windows EXE is not digitally signed, so your antivirus or Windows SmartScreen will probably show a warning before running it.
+
+Found a bug or have an idea? Feel free to open an [Issue](https://github.com/bit-hero-333/WaddleFree/issues) — just a heads-up that I don't check them very often.
