@@ -110,6 +110,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.waddlefree.mobile.data.MobilePrefs
 import com.waddlefree.mobile.network.PcCompanionClient
+import com.waddlefree.mobile.tile.WaddleFreeTileService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
@@ -335,6 +336,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
         isChecking = false
         hasCompletedInitialCheck = true
         isPcAwake = res.isAwake
+        prefs.lastKnownAwake = res.isAwake
         if (res.isAwake) {
             if (res.pcName.isNotBlank()) {
                 pcName = res.pcName
@@ -357,6 +359,7 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                 feedbackBanner = ""
             }
         }
+        WaddleFreeTileService.requestSync(context)
     }
 
     val customIntervalSignature = customCheckParts.joinToString(":")
@@ -402,6 +405,10 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
             MobileFaqItem(
                 question = "How does WaddleFree wake and sleep my PC?",
                 answer = "When your PC is sleeping, tapping 'Wake PC' broadcasts a hardware Magic Packet using the MAC address so your motherboard powers up. Once Windows is awake, tapping 'Sleep PC' signals the desktop companion over your local network to put Windows back to sleep."
+            ),
+            MobileFaqItem(
+                question = "How do I use the Quick Settings Tile?",
+                answer = "Swipe down your notification shade, tap the pencil (Edit) button, and drag the WaddleFree tile into your active tiles (works in both Small 1×1 and Large 2×1 tile sizes). When the tile is lit up, your PC is awake (tap to sleep); when unlit, your PC is sleeping (tap to wake). Long-pressing the tile opens WaddleFree."
             ),
             MobileFaqItem(
                 question = "What if my PC's local IP address changes?",
@@ -669,6 +676,8 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                         val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
                         if (ok) {
                             isPcAwake = false
+                            prefs.lastKnownAwake = false
+                            WaddleFreeTileService.requestSync(context)
                             feedbackBanner = "✓ Sleep signal sent to PC"
                         } else {
                             feedbackBanner = "Could not reach PC—check IP & Wi-Fi"

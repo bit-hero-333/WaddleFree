@@ -46,6 +46,16 @@ class MobilePrefs(context: Context) {
         get() = prefs.getInt("cached_port", 0)
         set(value) = prefs.edit().putInt("cached_port", value).apply()
 
+    var lastKnownAwake: Boolean
+        get() = prefs.getBoolean("last_known_awake", false)
+        set(value) = prefs.edit().putBoolean("last_known_awake", value).apply()
+
+    val fullIp: String
+        get() = ipOctets.joinToString(".")
+
+    val fullMac: String
+        get() = macOctets.joinToString(":")
+
     var themePreference: String
         get() = prefs.getString("theme_pref", "System") ?: "System"
         set(value) = prefs.edit().putString("theme_pref", value).apply()
