@@ -60,6 +60,10 @@ class MobilePrefs(context: Context) {
         get() = prefs.getString("theme_pref", "System") ?: "System"
         set(value) = prefs.edit().putString("theme_pref", value).apply()
 
+    var themePreset: String
+        get() = prefs.getString("theme_preset", "Default") ?: "Default"
+        set(value) = prefs.edit().putString("theme_preset", value).apply()
+
     var textScale: Float
         get() = prefs.getFloat("text_scale", 1.0f)
         set(value) = prefs.edit().putFloat("text_scale", value).apply()
@@ -72,6 +76,18 @@ class MobilePrefs(context: Context) {
         get() = prefs.getBoolean("bold_body", false)
         set(value) = prefs.edit().putBoolean("bold_body", value).apply()
 
+    var accentColor: String
+        get() = prefs.getString("accent_color", "Auto") ?: "Auto"
+        set(value) = prefs.edit().putString("accent_color", value).apply()
+
+    var windowBgColor: String
+        get() = prefs.getString("window_bg_color", "Auto") ?: "Auto"
+        set(value) = prefs.edit().putString("window_bg_color", value).apply()
+
+    var tileBgColor: String
+        get() = prefs.getString("tile_bg_color", "Auto") ?: "Auto"
+        set(value) = prefs.edit().putString("tile_bg_color", value).apply()
+
     var primaryTextColor: String
         get() = prefs.getString("primary_text_color", "Auto") ?: "Auto"
         set(value) = prefs.edit().putString("primary_text_color", value).apply()
@@ -79,6 +95,18 @@ class MobilePrefs(context: Context) {
     var secondaryTextColor: String
         get() = prefs.getString("secondary_text_color", "Auto") ?: "Auto"
         set(value) = prefs.edit().putString("secondary_text_color", value).apply()
+
+    var iconBgColor: String
+        get() = prefs.getString("icon_bg_color", "#18181B") ?: "#18181B"
+        set(value) = prefs.edit().putString("icon_bg_color", value).apply()
+
+    var iconFgColor: String
+        get() = prefs.getString("icon_fg_color", "#FFFFFF") ?: "#FFFFFF"
+        set(value) = prefs.edit().putString("icon_fg_color", value).apply()
+
+    var activeLauncherAlias: String
+        get() = prefs.getString("active_launcher_alias", ".LauncherDefault") ?: ".LauncherDefault"
+        set(value) = prefs.edit().putString("active_launcher_alias", value).apply()
 
     var autoCheckPreset: String
         get() = prefs.getString("auto_check_preset", "1 m") ?: "1 m"

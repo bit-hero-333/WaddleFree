@@ -12,12 +12,18 @@ namespace WaddleFree.Desktop.Models
         public string TrayBehavior { get; set; } = "Close"; // "Close", "Minimize", "Both", "None"
         public int SelectedPort { get; set; } = 0; // Picked once from unreserved Zone 2 ports and persisted forever
 
-        // Text & Readability Customization
-        public double TextScale { get; set; } = 1.0; // 0.9, 1.0, 1.15, 1.30
+        // Theme, Colors & Readability Customization
+        public string ThemePreset { get; set; } = "Default"; // "Default", "Ocean", "Amethyst", "Emerald", "Ember"
+        public double TextScale { get; set; } = 1.0; // 0.50 to 2.00
         public bool HighContrast { get; set; } = false;
         public bool BoldBodyText { get; set; } = false;
-        public string PrimaryTextColor { get; set; } = "Auto"; // "Auto", "White", "Cream", "Sky", "Accent", "Black"
-        public string SecondaryTextColor { get; set; } = "Auto"; // "Auto", "White", "Silver", "Cream", "Accent", "Charcoal"
+        public string AccentColor { get; set; } = "Auto"; // "Auto" or "#RRGGBB"
+        public string WindowBgColor { get; set; } = "Auto"; // "Auto" or "#RRGGBB"
+        public string TileBgColor { get; set; } = "Auto"; // "Auto" or "#RRGGBB"
+        public string PrimaryTextColor { get; set; } = "Auto"; // "Auto" or "#RRGGBB"
+        public string SecondaryTextColor { get; set; } = "Auto"; // "Auto" or "#RRGGBB"
+        public string IconBgColor { get; set; } = "#18181B"; // Default dark squircle background
+        public string IconFgColor { get; set; } = "#FFFFFF"; // Default white icon lines
 
         // Saved Window Placement (Monitor position & size)
         public double? WindowLeft { get; set; }

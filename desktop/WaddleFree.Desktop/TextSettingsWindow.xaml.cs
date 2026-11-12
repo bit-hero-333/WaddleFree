@@ -20,7 +20,7 @@ namespace WaddleFree.Desktop
 
         private bool _isDraggingSizeSlider;
         private bool _isDraggingColorWheel;
-        private string? _activeWheelTarget; // "Primary" or "Secondary"
+        private string? _activeWheelTarget; // "Accent", "WinBg", "TileBg", "Primary", "Secondary", "IconBg", "IconFg"
         private double _wheelHue = 0;
         private double _wheelSat = 0;
 
@@ -31,12 +31,18 @@ namespace WaddleFree.Desktop
 
             InitializeComponent();
 
-            // Paint the color wheel directly as the Background ImageBrush of the 6th squircle so it stays 100% inside the squircle border
+            // Paint the color wheel directly as the Background ImageBrush of every 6th squircle
             var squircleWheelBmp = CreateColorWheelBitmap(72, circularMask: false);
             var wheelSquircleBrush = new ImageBrush(squircleWheelBmp) { Stretch = Stretch.Fill };
             wheelSquircleBrush.Freeze();
+
+            AccentWheelSquircle.Background = wheelSquircleBrush;
+            WinBgWheelSquircle.Background = wheelSquircleBrush;
+            TileBgWheelSquircle.Background = wheelSquircleBrush;
             PrimWheelSquircle.Background = wheelSquircleBrush;
             SecWheelSquircle.Background = wheelSquircleBrush;
+            IconBgWheelSquircle.Background = wheelSquircleBrush;
+            IconFgWheelSquircle.Background = wheelSquircleBrush;
 
             LargeColorWheelImage.Source = CreateColorWheelBitmap(180, circularMask: true);
 
@@ -57,10 +63,42 @@ namespace WaddleFree.Desktop
 
         public void RefreshButtonsVisualState()
         {
+            bool isDark = ThemeService.IsEffectiveDarkMode(_settings);
+
+            // Dynamically change theme preset names based on Dark vs Light mode
+            PresetModeLabel.Text = isDark ? "Dark Mode Palettes" : "Light Mode Palettes";
+            PresetDefaultBtn.Content = "Default";
+            PresetOceanBtn.Content = isDark ? "Midnight" : "Daybreak";
+            PresetAmethystBtn.Content = isDark ? "Amethyst" : "Lavender";
+            PresetEmeraldBtn.Content = isDark ? "Emerald" : "Sage";
+            PresetEmberBtn.Content = isDark ? "Ember" : "Warm Sand";
+
+            string preset = (_settings.ThemePreset ?? "Default").Trim();
+            StylePill(PresetDefaultBtn, string.Equals(preset, "Default", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetOceanBtn, string.Equals(preset, "Ocean", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetAmethystBtn, string.Equals(preset, "Amethyst", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetEmeraldBtn, string.Equals(preset, "Emerald", StringComparison.OrdinalIgnoreCase));
+            StylePill(PresetEmberBtn, string.Equals(preset, "Ember", StringComparison.OrdinalIgnoreCase));
+
             RenderSteppedSizeSlider();
 
             StylePill(HighContrastBtn, _settings.HighContrast);
             StylePill(BoldTextBtn, _settings.BoldBodyText);
+
+            HighlightActiveSquircle(
+                _settings.AccentColor,
+                new[] { AccentSquircle1, AccentSquircle2, AccentSquircle3, AccentSquircle4, AccentSquircle5 },
+                AccentWheelSquircle);
+
+            HighlightActiveSquircle(
+                _settings.WindowBgColor,
+                new[] { WinBgSquircle1, WinBgSquircle2, WinBgSquircle3, WinBgSquircle4, WinBgSquircle5 },
+                WinBgWheelSquircle);
+
+            HighlightActiveSquircle(
+                _settings.TileBgColor,
+                new[] { TileBgSquircle1, TileBgSquircle2, TileBgSquircle3, TileBgSquircle4, TileBgSquircle5 },
+                TileBgWheelSquircle);
 
             HighlightActiveSquircle(
                 _settings.PrimaryTextColor,
@@ -71,6 +109,34 @@ namespace WaddleFree.Desktop
                 _settings.SecondaryTextColor,
                 new[] { SecSquircle1, SecSquircle2, SecSquircle3, SecSquircle4, SecSquircle5 },
                 SecWheelSquircle);
+
+            HighlightActiveSquircle(
+                _settings.IconBgColor,
+                new[] { IconBgSquircle1, IconBgSquircle2, IconBgSquircle3, IconBgSquircle4, IconBgSquircle5 },
+                IconBgWheelSquircle);
+
+            HighlightActiveSquircle(
+                _settings.IconFgColor,
+                new[] { IconFgSquircle1, IconFgSquircle2, IconFgSquircle3, IconFgSquircle4, IconFgSquircle5 },
+                IconFgWheelSquircle);
+
+            IconLivePreviewImage.Source = ThemeService.CreateWindowIconSource(_settings.IconBgColor, _settings.IconFgColor, 96);
+        }
+
+        // --- Theme Preset Buttons ---
+        private void PresetBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string presetKey)
+            {
+                _settings.ThemePreset = presetKey;
+                // Clear individual element overrides so the preset's cohesive palette applies immediately
+                _settings.AccentColor = "Auto";
+                _settings.WindowBgColor = "Auto";
+                _settings.TileBgColor = "Auto";
+                _settings.PrimaryTextColor = "Auto";
+                _settings.SecondaryTextColor = "Auto";
+                ApplyAndRefresh();
+            }
         }
 
         // --- 7-Dot Stepped Slider (50%, 75%, 100%, 125%, 150%, 175%, 200%) ---
@@ -219,6 +285,33 @@ namespace WaddleFree.Desktop
             wheelButton.BorderThickness = isCustomWheel ? new Thickness(3) : new Thickness(1.5);
         }
 
+        private void AccentPresetSquircle_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
+            {
+                _settings.AccentColor = hex;
+                ApplyAndRefresh();
+            }
+        }
+
+        private void WinBgPresetSquircle_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
+            {
+                _settings.WindowBgColor = hex;
+                ApplyAndRefresh();
+            }
+        }
+
+        private void TileBgPresetSquircle_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
+            {
+                _settings.TileBgColor = hex;
+                ApplyAndRefresh();
+            }
+        }
+
         private void PrimPresetSquircle_Click(object sender, RoutedEventArgs e)
         {
             if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
@@ -237,17 +330,33 @@ namespace WaddleFree.Desktop
             }
         }
 
-        private void PrimWheelSquircle_Click(object sender, RoutedEventArgs e)
+        private void IconBgPresetSquircle_Click(object sender, RoutedEventArgs e)
         {
-            ToggleColorWheelForTarget("Primary");
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
+            {
+                _settings.IconBgColor = hex;
+                ApplyAndRefresh();
+            }
         }
 
-        private void SecWheelSquircle_Click(object sender, RoutedEventArgs e)
+        private void IconFgPresetSquircle_Click(object sender, RoutedEventArgs e)
         {
-            ToggleColorWheelForTarget("Secondary");
+            if (sender is System.Windows.Controls.Button btn && btn.Tag is string hex)
+            {
+                _settings.IconFgColor = hex;
+                ApplyAndRefresh();
+            }
         }
 
-        private void ToggleColorWheelForTarget(string target)
+        private void AccentWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("Accent", AccentSectionHost);
+        private void WinBgWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("WinBg", WinBgSectionHost);
+        private void TileBgWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("TileBg", TileBgSectionHost);
+        private void PrimWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("Primary", PrimSectionHost);
+        private void SecWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("Secondary", SecSectionHost);
+        private void IconBgWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("IconBg", IconBgSectionHost);
+        private void IconFgWheelSquircle_Click(object sender, RoutedEventArgs e) => ToggleColorWheelForTarget("IconFg", IconFgSectionHost);
+
+        private void ToggleColorWheelForTarget(string target, StackPanel targetHost)
         {
             if (ColorWheelPickerPanel.Visibility == Visibility.Visible && _activeWheelTarget == target)
             {
@@ -257,9 +366,23 @@ namespace WaddleFree.Desktop
             }
 
             _activeWheelTarget = target;
-            WheelTargetTitleText.Text = target == "Primary"
-                ? "Custom Main Heading Color"
-                : "Custom Description / FAQ Color";
+            WheelTargetTitleText.Text = target switch
+            {
+                "Accent" => "Custom Accent Color",
+                "WinBg" => "Custom Window Background",
+                "TileBg" => "Custom Card & Surface Color",
+                "Primary" => "Custom Main Heading Color",
+                "Secondary" => "Custom Description / FAQ Color",
+                "IconBg" => "Custom Icon Background",
+                "IconFg" => "Custom Icon Lines Color",
+                _ => "Custom Color"
+            };
+
+            if (ColorWheelPickerPanel.Parent is Panel oldParent)
+            {
+                oldParent.Children.Remove(ColorWheelPickerPanel);
+            }
+            targetHost.Children.Add(ColorWheelPickerPanel);
 
             ColorWheelPickerPanel.Visibility = Visibility.Visible;
         }
@@ -306,7 +429,6 @@ namespace WaddleFree.Desktop
             Canvas.SetLeft(WheelSelectorRing, radius + dx - (WheelSelectorRing.Width / 2.0));
             Canvas.SetTop(WheelSelectorRing, radius + dy - (WheelSelectorRing.Height / 2.0));
 
-            // Match orientation of standard color wheel: top (-90 deg) = Red (0 deg), clockwise
             double angleDeg = Math.Atan2(dy, dx) * (180.0 / Math.PI) + 90.0;
             if (angleDeg < 0) angleDeg += 360.0;
 
@@ -333,10 +455,30 @@ namespace WaddleFree.Desktop
             WheelPreviewSquircle.Background = new SolidColorBrush(picked);
             WheelHexText.Text = hex;
 
-            if (_activeWheelTarget == "Primary")
-                _settings.PrimaryTextColor = hex;
-            else
-                _settings.SecondaryTextColor = hex;
+            switch (_activeWheelTarget)
+            {
+                case "Accent":
+                    _settings.AccentColor = hex;
+                    break;
+                case "WinBg":
+                    _settings.WindowBgColor = hex;
+                    break;
+                case "TileBg":
+                    _settings.TileBgColor = hex;
+                    break;
+                case "Primary":
+                    _settings.PrimaryTextColor = hex;
+                    break;
+                case "Secondary":
+                    _settings.SecondaryTextColor = hex;
+                    break;
+                case "IconBg":
+                    _settings.IconBgColor = hex;
+                    break;
+                case "IconFg":
+                    _settings.IconFgColor = hex;
+                    break;
+            }
 
             ApplyAndRefresh();
         }
@@ -380,7 +522,6 @@ namespace WaddleFree.Desktop
                         alpha = (byte)Math.Clamp((radius - dist) / 1.5 * 255.0, 0.0, 255.0);
                     }
 
-                    // Premultiplied BGRA32
                     pixels[idx + 0] = (byte)(c.B * alpha / 255);
                     pixels[idx + 1] = (byte)(c.G * alpha / 255);
                     pixels[idx + 2] = (byte)(c.R * alpha / 255);
@@ -444,11 +585,17 @@ namespace WaddleFree.Desktop
 
         private void ResetDefaults_Click(object sender, RoutedEventArgs e)
         {
+            _settings.ThemePreset = "Default";
             _settings.TextScale = 1.00;
             _settings.HighContrast = false;
             _settings.BoldBodyText = false;
+            _settings.AccentColor = "Auto";
+            _settings.WindowBgColor = "Auto";
+            _settings.TileBgColor = "Auto";
             _settings.PrimaryTextColor = "Auto";
             _settings.SecondaryTextColor = "Auto";
+            _settings.IconBgColor = "#18181B";
+            _settings.IconFgColor = "#FFFFFF";
             ColorWheelPickerPanel.Visibility = Visibility.Collapsed;
             _activeWheelTarget = null;
             ApplyAndRefresh();

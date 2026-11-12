@@ -379,10 +379,17 @@ namespace WaddleFree.Desktop
                 UpdateThemeButtonsVisualState();
                 UpdateTrayButtonsAndHint();
                 UpdateDynamicPopupConstraints();
+                UpdateTrayIcon();
             })
             {
                 Owner = this
             };
+
+            var customIcon = ThemeService.CreateWindowIconSource(_settings.IconBgColor, _settings.IconFgColor, 128);
+            if (customIcon != null)
+            {
+                _textSettingsWindow.Icon = customIcon;
+            }
 
             _textSettingsWindow.Closed += (_, _) => _textSettingsWindow = null;
             _textSettingsWindow.Show();
@@ -624,8 +631,7 @@ namespace WaddleFree.Desktop
         // --- System Tray & Window Lifecycle ---
         private void InitializeSystemTray()
         {
-            var accent = ThemeService.GetWindowsAccentColor();
-            System.Drawing.Icon generatedIcon = CreateTrayIcon(System.Drawing.Color.FromArgb(accent.R, accent.G, accent.B));
+            System.Drawing.Icon generatedIcon = ThemeService.CreateCustomTrayIcon(_settings);
 
             var contextMenu = new Forms.ContextMenuStrip();
             var openItem = new Forms.ToolStripMenuItem("Open WaddleFree");
@@ -653,42 +659,19 @@ namespace WaddleFree.Desktop
             _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
         }
 
-        private static System.Drawing.Icon CreateTrayIcon(System.Drawing.Color accentColor)
+        private void UpdateTrayIcon()
         {
+            if (_trayIcon == null) return;
             try
             {
-                var streamInfo = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico"));
-                if (streamInfo?.Stream != null)
-                {
-                    using var stream = streamInfo.Stream;
-                    return new System.Drawing.Icon(stream, new System.Drawing.Size(32, 32));
-                }
+                var oldIcon = _trayIcon.Icon;
+                _trayIcon.Icon = ThemeService.CreateCustomTrayIcon(_settings);
+                oldIcon?.Dispose();
             }
             catch
             {
-                // Fallback to procedural icon if resource stream fails
+                // Ignore tray icon update issues
             }
-
-            using var bmp = new Bitmap(32, 32);
-            using (var g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.Clear(System.Drawing.Color.Transparent);
-
-                using var bgBrush = new SolidBrush(accentColor);
-                g.FillEllipse(bgBrush, 2, 2, 28, 28);
-
-                using var pen = new System.Drawing.Pen(System.Drawing.Color.White, 3f)
-                {
-                    StartCap = LineCap.Round,
-                    EndCap = LineCap.Round
-                };
-                g.DrawArc(pen, 8, 9, 16, 15, -60, 300);
-                g.DrawLine(pen, 16, 6, 16, 15);
-            }
-
-            IntPtr hIcon = bmp.GetHicon();
-            return System.Drawing.Icon.FromHandle(hIcon);
         }
 
         private void ShowMainWindow()

@@ -1,7 +1,15 @@
 package com.waddlefree.mobile
 
+import android.app.Activity
+import android.app.ActivityManager
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -254,11 +262,17 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
     }
 
     var themePref by remember { mutableStateOf(prefs.themePreference) }
+    var themePreset by remember { mutableStateOf(prefs.themePreset) }
     var textScale by remember { mutableFloatStateOf(prefs.textScale.coerceIn(0.50f, 2.00f)) }
     var highContrast by remember { mutableStateOf(prefs.highContrast) }
     var boldBodyText by remember { mutableStateOf(prefs.boldBodyText) }
+    var accentColorSetting by remember { mutableStateOf(prefs.accentColor) }
+    var windowBgColorSetting by remember { mutableStateOf(prefs.windowBgColor) }
+    var tileBgColorSetting by remember { mutableStateOf(prefs.tileBgColor) }
     var primaryColorSetting by remember { mutableStateOf(prefs.primaryTextColor) }
     var secondaryColorSetting by remember { mutableStateOf(prefs.secondaryTextColor) }
+    var iconBgColorSetting by remember { mutableStateOf(prefs.iconBgColor) }
+    var iconFgColorSetting by remember { mutableStateOf(prefs.iconFgColor) }
 
     val ipOctets = remember {
         val initial = prefs.ipOctets
@@ -299,14 +313,32 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
         Color(0xFF3B82F6)
     }
 
-    val palette = remember(isDark, highContrast, primaryColorSetting, secondaryColorSetting, dynamicAccent) {
+    val palette = remember(
+        isDark,
+        themePreset,
+        highContrast,
+        accentColorSetting,
+        windowBgColorSetting,
+        tileBgColorSetting,
+        primaryColorSetting,
+        secondaryColorSetting,
+        dynamicAccent
+    ) {
         buildPalette(
             isDark = isDark,
+            themePreset = themePreset,
             highContrast = highContrast,
+            accentSetting = accentColorSetting,
+            windowBgSetting = windowBgColorSetting,
+            tileBgSetting = tileBgColorSetting,
             primarySetting = primaryColorSetting,
             secondarySetting = secondaryColorSetting,
-            accent = dynamicAccent
+            systemAccent = dynamicAccent
         )
+    }
+
+    LaunchedEffect(iconBgColorSetting, iconFgColorSetting) {
+        updateTaskDescriptionIcon(context, iconBgColorSetting, iconFgColorSetting)
     }
 
     val uiScale = 0.55f + (0.45f * textScale)
@@ -985,16 +1017,37 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
         }
     }
 
-    // --- TEXT & READABILITY SETTINGS MODAL DIALOG ---
+    // --- THEME & APPEARANCE MODAL DIALOG ---
     if (isTextSettingsOpen) {
         TextSettingsDialog(
+            isDark = isDark,
             palette = palette,
+            themePreset = themePreset,
             textScale = textScale,
             uiScale = uiScale,
             highContrast = highContrast,
             boldBodyText = boldBodyText,
+            accentColorSetting = accentColorSetting,
+            windowBgColorSetting = windowBgColorSetting,
+            tileBgColorSetting = tileBgColorSetting,
             primaryColorSetting = primaryColorSetting,
             secondaryColorSetting = secondaryColorSetting,
+            iconBgColorSetting = iconBgColorSetting,
+            iconFgColorSetting = iconFgColorSetting,
+            onPresetChange = { presetKey ->
+                themePreset = presetKey
+                accentColorSetting = "Auto"
+                windowBgColorSetting = "Auto"
+                tileBgColorSetting = "Auto"
+                primaryColorSetting = "Auto"
+                secondaryColorSetting = "Auto"
+                prefs.themePreset = presetKey
+                prefs.accentColor = "Auto"
+                prefs.windowBgColor = "Auto"
+                prefs.tileBgColor = "Auto"
+                prefs.primaryTextColor = "Auto"
+                prefs.secondaryTextColor = "Auto"
+            },
             onScaleChange = {
                 textScale = it
                 prefs.textScale = it
@@ -1007,6 +1060,18 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                 boldBodyText = !boldBodyText
                 prefs.boldBodyText = boldBodyText
             },
+            onAccentColorChange = {
+                accentColorSetting = it
+                prefs.accentColor = it
+            },
+            onWindowBgColorChange = {
+                windowBgColorSetting = it
+                prefs.windowBgColor = it
+            },
+            onTileBgColorChange = {
+                tileBgColorSetting = it
+                prefs.tileBgColor = it
+            },
             onPrimaryColorChange = {
                 primaryColorSetting = it
                 prefs.primaryTextColor = it
@@ -1015,19 +1080,43 @@ fun WaddleFreeMobileApp(prefs: MobilePrefs) {
                 secondaryColorSetting = it
                 prefs.secondaryTextColor = it
             },
+            onIconBgColorChange = {
+                iconBgColorSetting = it
+                prefs.iconBgColor = it
+            },
+            onIconFgColorChange = {
+                iconFgColorSetting = it
+                prefs.iconFgColor = it
+            },
             onReset = {
+                themePreset = "Default"
                 textScale = 1.0f
                 highContrast = false
                 boldBodyText = false
+                accentColorSetting = "Auto"
+                windowBgColorSetting = "Auto"
+                tileBgColorSetting = "Auto"
                 primaryColorSetting = "Auto"
                 secondaryColorSetting = "Auto"
+                iconBgColorSetting = "#18181B"
+                iconFgColorSetting = "#FFFFFF"
+                prefs.themePreset = "Default"
                 prefs.textScale = 1.0f
                 prefs.highContrast = false
                 prefs.boldBodyText = false
+                prefs.accentColor = "Auto"
+                prefs.windowBgColor = "Auto"
+                prefs.tileBgColor = "Auto"
                 prefs.primaryTextColor = "Auto"
                 prefs.secondaryTextColor = "Auto"
+                prefs.iconBgColor = "#18181B"
+                prefs.iconFgColor = "#FFFFFF"
+                syncLauncherIconAlias(context, prefs, "#18181B", "#FFFFFF")
             },
-            onDismiss = { isTextSettingsOpen = false }
+            onDismiss = {
+                isTextSettingsOpen = false
+                syncLauncherIconAlias(context, prefs, iconBgColorSetting, iconFgColorSetting)
+            }
         )
     }
 }
@@ -1053,6 +1142,14 @@ private fun OptionsMenuBarContent(
 ) {
     var isIntervalDropdownExpanded by remember { mutableStateOf(false) }
     val customFocusRequesters = remember { List(3) { FocusRequester() } }
+    val artistPalettePath = remember {
+        PathParser().parsePathString(
+            "M 12.0 2.2 C 6.4 2.2 1.8 6.5 1.8 11.8 C 1.8 17.1 6.4 21.5 11.9 21.5 " +
+                "C 13.5 21.5 14.7 20.3 14.7 18.7 C 14.7 18.0 14.4 17.4 14.0 16.9 " +
+                "C 13.6 16.5 13.4 15.9 13.4 15.3 C 13.4 13.9 14.5 12.8 15.9 12.8 " +
+                "L 17.7 12.8 C 20.7 12.8 23.0 10.4 23.0 7.5 C 23.0 4.3 18.1 2.2 12.0 2.2 Z"
+        ).toPath()
+    }
 
     @Composable
     fun ThemeAndTextControls() {
@@ -1092,7 +1189,7 @@ private fun OptionsMenuBarContent(
 
         Spacer(modifier = Modifier.width(6.dp))
 
-        // 'T' with slightly overlaid Vector Accent Gear Button
+        // Artist Palette Button for Theme & Appearance
         Box(
             modifier = Modifier
                 .size(width = (34f * uiScale).dp, height = (30f * uiScale).dp)
@@ -1103,51 +1200,26 @@ private fun OptionsMenuBarContent(
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.size((20f * uiScale).dp)) {
-                val s = size.width / 22f
-                val tPath = Path().apply {
-                    moveTo(1.5f * s, 2.5f * s)
-                    lineTo(15.5f * s, 2.5f * s)
-                    lineTo(15.5f * s, 5.3f * s)
-                    lineTo(10.0f * s, 5.3f * s)
-                    lineTo(10.0f * s, 18.0f * s)
-                    lineTo(7.0f * s, 18.0f * s)
-                    lineTo(7.0f * s, 5.3f * s)
-                    lineTo(1.5f * s, 5.3f * s)
-                    close()
-                }
-                drawPath(tPath, color = palette.primaryText)
+                val s = size.width / 24f
+                withTransform({
+                    scale(scaleX = s, scaleY = s, pivot = Offset.Zero)
+                }) {
+                    drawPath(path = artistPalettePath, color = palette.primaryText)
+                    // Thumbhole cutout
+                    drawCircle(color = palette.menuSurface, radius = 1.75f, center = Offset(9.75f, 15.8f))
+                    // 4 Colorful Paint Dabs
+                    drawCircle(color = palette.menuSurface, radius = 2.1f, center = Offset(6.4f, 11.4f))
+                    drawCircle(color = Color(0xFFF87171), radius = 1.6f, center = Offset(6.4f, 11.4f))
 
-                val gearCenter = Offset(14.2f * s, 14.8f * s)
-                drawCircle(
-                    color = palette.menuSurface,
-                    radius = 6.8f * s,
-                    center = gearCenter
-                )
+                    drawCircle(color = palette.menuSurface, radius = 2.1f, center = Offset(9.3f, 7.0f))
+                    drawCircle(color = Color(0xFFFBBF24), radius = 1.6f, center = Offset(9.3f, 7.0f))
 
-                val gearPath = Path().apply {
-                    fillType = PathFillType.EvenOdd
-                    val outerR = 5.8f * s
-                    val innerR = 4.3f * s
-                    val teeth = 8
-                    val totalSteps = teeth * 4
-                    for (i in 0 until totalSteps) {
-                        val angle = (i * 2.0 * Math.PI) / totalSteps
-                        val r = if (i % 4 == 0 || i % 4 == 1) outerR else innerR
-                        val px = gearCenter.x + (r * cos(angle)).toFloat()
-                        val py = gearCenter.y + (r * sin(angle)).toFloat()
-                        if (i == 0) moveTo(px, py) else lineTo(px, py)
-                    }
-                    close()
-                    addOval(
-                        androidx.compose.ui.geometry.Rect(
-                            gearCenter.x - 2.0f * s,
-                            gearCenter.y - 2.0f * s,
-                            gearCenter.x + 2.0f * s,
-                            gearCenter.y + 2.0f * s
-                        )
-                    )
+                    drawCircle(color = palette.menuSurface, radius = 2.1f, center = Offset(14.3f, 6.8f))
+                    drawCircle(color = Color(0xFF4ADE80), radius = 1.6f, center = Offset(14.3f, 6.8f))
+
+                    drawCircle(color = palette.menuSurface, radius = 2.1f, center = Offset(18.3f, 9.5f))
+                    drawCircle(color = palette.accent, radius = 1.6f, center = Offset(18.3f, 9.5f))
                 }
-                drawPath(gearPath, color = palette.accent)
             }
         }
     }
@@ -1756,36 +1828,159 @@ private fun MacAddressSegmentedTile(
 
 @Composable
 private fun TextSettingsDialog(
+    isDark: Boolean,
     palette: AppPalette,
+    themePreset: String,
     textScale: Float,
     uiScale: Float,
     highContrast: Boolean,
     boldBodyText: Boolean,
+    accentColorSetting: String,
+    windowBgColorSetting: String,
+    tileBgColorSetting: String,
     primaryColorSetting: String,
     secondaryColorSetting: String,
+    iconBgColorSetting: String,
+    iconFgColorSetting: String,
+    onPresetChange: (String) -> Unit,
     onScaleChange: (Float) -> Unit,
     onHighContrastToggle: () -> Unit,
     onBoldToggle: () -> Unit,
+    onAccentColorChange: (String) -> Unit,
+    onWindowBgColorChange: (String) -> Unit,
+    onTileBgColorChange: (String) -> Unit,
     onPrimaryColorChange: (String) -> Unit,
     onSecondaryColorChange: (String) -> Unit,
+    onIconBgColorChange: (String) -> Unit,
+    onIconFgColorChange: (String) -> Unit,
     onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var activeWheelTarget by remember { mutableStateOf<String?>(null) } // "Primary" or "Secondary"
+    val context = LocalContext.current
+    var activeWheelTarget by remember { mutableStateOf<String?>(null) }
     var wheelHue by remember { mutableFloatStateOf(0f) }
     var wheelSat by remember { mutableFloatStateOf(0f) }
     var wheelVal by remember { mutableFloatStateOf(1f) }
 
     val squircleWheelBitmap = remember { createHsvWheelBitmap(96, circularMask = false).asImageBitmap() }
     val circularWheelBitmap = remember { createHsvWheelBitmap(220, circularMask = true).asImageBitmap() }
+    val iconPreviewBitmap = remember(iconBgColorSetting, iconFgColorSetting) {
+        createCustomAppIconBitmap(context, iconBgColorSetting, iconFgColorSetting, 112).asImageBitmap()
+    }
 
     val squircleSize = (36f * uiScale).dp
     val squircleShape = RoundedCornerShape((11f * uiScale).dp)
+
+    fun applyWheelHex(hex: String) {
+        when (activeWheelTarget) {
+            "Accent" -> onAccentColorChange(hex)
+            "WinBg" -> onWindowBgColorChange(hex)
+            "TileBg" -> onTileBgColorChange(hex)
+            "Primary" -> onPrimaryColorChange(hex)
+            "Secondary" -> onSecondaryColorChange(hex)
+            "IconBg" -> onIconBgColorChange(hex)
+            "IconFg" -> onIconFgColorChange(hex)
+        }
+    }
+
+    @Composable
+    fun InlineWheelPicker(targetKey: String, label: String) {
+        AnimatedVisibility(visible = activeWheelTarget == targetKey) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(palette.subtleSurface)
+                    .border(1.5.dp, palette.accent, RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = label,
+                    fontSize = (12f * textScale).sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = palette.primaryText,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .size(136.dp)
+                        .pointerInput(targetKey) {
+                            detectTapGestures { offset ->
+                                val r = size.width / 2f
+                                val dx = offset.x - r
+                                val dy = offset.y - r
+                                val dist = min(hypot(dx, dy), r)
+                                var deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+                                if (deg < 0f) deg += 360f
+                                wheelHue = deg
+                                wheelSat = (dist / r).coerceIn(0f, 1f)
+                                applyWheelHex(hsvToHex(wheelHue, wheelSat, wheelVal))
+                            }
+                        }
+                        .pointerInput(targetKey) {
+                            detectDragGestures { change, _ ->
+                                change.consume()
+                                val r = size.width / 2f
+                                val dx = change.position.x - r
+                                val dy = change.position.y - r
+                                val dist = min(hypot(dx, dy), r)
+                                var deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
+                                if (deg < 0f) deg += 360f
+                                wheelHue = deg
+                                wheelSat = (dist / r).coerceIn(0f, 1f)
+                                applyWheelHex(hsvToHex(wheelHue, wheelSat, wheelVal))
+                            }
+                        }
+                ) {
+                    Image(
+                        bitmap = circularWheelBitmap,
+                        contentDescription = "Color Wheel",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val r = size.width / 2f
+                        val rad = Math.toRadians((wheelHue - 90f).toDouble())
+                        val cx = r + (wheelSat * r * cos(rad)).toFloat()
+                        val cy = r + (wheelSat * r * sin(rad)).toFloat()
+                        drawCircle(
+                            color = Color.White,
+                            radius = 6.dp.toPx(),
+                            center = Offset(cx, cy),
+                            style = Stroke(width = 2.2.dp.toPx())
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Brightness",
+                    fontSize = (11f * textScale).sp,
+                    color = palette.secondaryText
+                )
+                Slider(
+                    value = wheelVal,
+                    onValueChange = {
+                        wheelVal = it
+                        applyWheelHex(hsvToHex(wheelHue, wheelSat, wheelVal))
+                    },
+                    valueRange = 0.08f..1.0f,
+                    colors = SliderDefaults.colors(
+                        thumbColor = palette.accent,
+                        activeTrackColor = palette.accent
+                    )
+                )
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(max = 650.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(palette.windowBg)
                 .border(1.5.dp, palette.tileBorder, RoundedCornerShape(20.dp))
@@ -1796,13 +1991,267 @@ private fun TextSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Text & Readability",
+                    text = "Theme & Appearance",
                     fontSize = (17f * textScale).sp,
                     fontWeight = FontWeight.Bold,
                     color = palette.primaryText
                 )
 
-                // 1. Stepped Dot Slider (50% to 200% in 25% steps; 100% is at the 3rd dot, not center)
+                // 1. Named Theme Presets (Names & Palettes adapt dynamically to Dark vs Light mode)
+                val presetItems = remember(isDark) {
+                    if (isDark) {
+                        listOf(
+                            "Default" to "Default",
+                            "Ocean" to "Midnight",
+                            "Amethyst" to "Amethyst",
+                            "Emerald" to "Emerald",
+                            "Ember" to "Ember"
+                        )
+                    } else {
+                        listOf(
+                            "Default" to "Default",
+                            "Ocean" to "Daybreak",
+                            "Amethyst" to "Lavender",
+                            "Emerald" to "Sage",
+                            "Ember" to "Warm Sand"
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(palette.tileBg)
+                        .border(1.dp, palette.tileBorder, RoundedCornerShape(14.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Theme Presets",
+                            fontSize = (12.5f * textScale).sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = palette.primaryText
+                        )
+                        Text(
+                            text = if (isDark) "Dark Mode Palettes" else "Light Mode Palettes",
+                            fontSize = (11f * textScale).sp,
+                            fontWeight = FontWeight.Medium,
+                            color = palette.accent
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(palette.subtleSurface)
+                            .padding(3.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        presetItems.forEach { (key, displayName) ->
+                            val active = themePreset.equals(key, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (active) palette.accent else Color.Transparent)
+                                    .clickable { onPresetChange(key) }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = displayName,
+                                    fontSize = (12f * textScale).sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (active) palette.onAccent else palette.secondaryText
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 2. Accent & Highlight Color
+                ColorSquircleSection(
+                    title = "Accent & Highlight Color",
+                    presets = listOf("#38BDF8", "#A855F7", "#10B981", "#F97316", "#F43F5E"),
+                    currentSetting = accentColorSetting,
+                    squircleSize = squircleSize,
+                    squircleShape = squircleShape,
+                    squircleWheelBitmap = squircleWheelBitmap,
+                    palette = palette,
+                    textScale = textScale,
+                    onPresetClick = onAccentColorChange,
+                    onWheelSquircleClick = {
+                        activeWheelTarget = if (activeWheelTarget == "Accent") null else "Accent"
+                    },
+                    wheelContent = { InlineWheelPicker("Accent", "Custom Accent Color") }
+                )
+
+                // 3. Window Background & Card Surface Colors
+                ColorSquircleSection(
+                    title = "Window Background Color",
+                    presets = listOf("#16161A", "#0F172A", "#161124", "#F3F4F7", "#FDF5EC"),
+                    currentSetting = windowBgColorSetting,
+                    squircleSize = squircleSize,
+                    squircleShape = squircleShape,
+                    squircleWheelBitmap = squircleWheelBitmap,
+                    palette = palette,
+                    textScale = textScale,
+                    onPresetClick = onWindowBgColorChange,
+                    onWheelSquircleClick = {
+                        activeWheelTarget = if (activeWheelTarget == "WinBg") null else "WinBg"
+                    },
+                    wheelContent = { InlineWheelPicker("WinBg", "Custom Window Background") }
+                )
+
+                ColorSquircleSection(
+                    title = "Card & Menu Surface Color",
+                    presets = listOf("#222228", "#1E293B", "#231B38", "#FFFFFF", "#F8FAFC"),
+                    currentSetting = tileBgColorSetting,
+                    squircleSize = squircleSize,
+                    squircleShape = squircleShape,
+                    squircleWheelBitmap = squircleWheelBitmap,
+                    palette = palette,
+                    textScale = textScale,
+                    onPresetClick = onTileBgColorChange,
+                    onWheelSquircleClick = {
+                        activeWheelTarget = if (activeWheelTarget == "TileBg") null else "TileBg"
+                    },
+                    wheelContent = { InlineWheelPicker("TileBg", "Custom Card & Surface Color") }
+                )
+
+                // 4. Primary Text Color Squircles
+                ColorSquircleSection(
+                    title = "Main Heading & Value Text Color",
+                    presets = listOf("#FFFFFF", "#18181B", "#F87171", "#4ADE80", "#60A5FA"),
+                    currentSetting = primaryColorSetting,
+                    squircleSize = squircleSize,
+                    squircleShape = squircleShape,
+                    squircleWheelBitmap = squircleWheelBitmap,
+                    palette = palette,
+                    textScale = textScale,
+                    onPresetClick = onPrimaryColorChange,
+                    onWheelSquircleClick = {
+                        activeWheelTarget = if (activeWheelTarget == "Primary") null else "Primary"
+                    },
+                    wheelContent = { InlineWheelPicker("Primary", "Custom Main Heading Color") }
+                )
+
+                // 5. Secondary Text Color Squircles
+                ColorSquircleSection(
+                    title = "Descriptions, FAQ Answers & Hint Text Color",
+                    presets = listOf("#DBDDE4", "#FFFFFF", "#FBBF24", "#34D399", "#38BDF8"),
+                    currentSetting = secondaryColorSetting,
+                    squircleSize = squircleSize,
+                    squircleShape = squircleShape,
+                    squircleWheelBitmap = squircleWheelBitmap,
+                    palette = palette,
+                    textScale = textScale,
+                    onPresetClick = onSecondaryColorChange,
+                    onWheelSquircleClick = {
+                        activeWheelTarget = if (activeWheelTarget == "Secondary") null else "Secondary"
+                    },
+                    wheelContent = { InlineWheelPicker("Secondary", "Custom Description / FAQ Color") }
+                )
+
+                // 6. Program Icon Colors (Background & Icon Lines + Live Preview)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(palette.tileBg)
+                        .border(1.dp, palette.tileBorder, RoundedCornerShape(14.dp))
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Program Icon Colors",
+                                fontSize = (12.5f * textScale).sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = palette.primaryText
+                            )
+                            Text(
+                                text = "Updates app icon (Quick Settings tile stays unchanged)",
+                                fontSize = (11f * textScale).sp,
+                                color = palette.secondaryText
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(11.dp))
+                                .border(1.dp, palette.tileBorder, RoundedCornerShape(11.dp))
+                        ) {
+                            Image(
+                                bitmap = iconPreviewBitmap,
+                                contentDescription = "App Icon Preview",
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Icon Background Color",
+                        fontSize = (11.5f * textScale).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.secondaryText,
+                        modifier = Modifier.padding(bottom = 7.dp)
+                    )
+                    SquircleRow(
+                        presets = listOf("#18181B", "#1E3A8A", "#4C1D95", "#065F46", "#F4F4F6"),
+                        currentSetting = iconBgColorSetting,
+                        squircleSize = squircleSize,
+                        squircleShape = squircleShape,
+                        squircleWheelBitmap = squircleWheelBitmap,
+                        palette = palette,
+                        onPresetClick = onIconBgColorChange,
+                        onWheelSquircleClick = {
+                            activeWheelTarget = if (activeWheelTarget == "IconBg") null else "IconBg"
+                        }
+                    )
+                    InlineWheelPicker("IconBg", "Custom Icon Background")
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "Icon Lines Color",
+                        fontSize = (11.5f * textScale).sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.secondaryText,
+                        modifier = Modifier.padding(bottom = 7.dp)
+                    )
+                    SquircleRow(
+                        presets = listOf("#FFFFFF", "#18181B", "#38BDF8", "#4ADE80", "#FBBF24"),
+                        currentSetting = iconFgColorSetting,
+                        squircleSize = squircleSize,
+                        squircleShape = squircleShape,
+                        squircleWheelBitmap = squircleWheelBitmap,
+                        palette = palette,
+                        onPresetClick = onIconFgColorChange,
+                        onWheelSquircleClick = {
+                            activeWheelTarget = if (activeWheelTarget == "IconFg") null else "IconFg"
+                        }
+                    )
+                    InlineWheelPicker("IconFg", "Custom Icon Lines Color")
+                }
+
+                // 7. Stepped Dot Slider (50% to 200% in 25% steps; 100% is at the 3rd dot)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1820,7 +2269,7 @@ private fun TextSettingsDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Text Size",
+                            text = "Text & UI Scale",
                             fontSize = (12.5f * textScale).sp,
                             fontWeight = FontWeight.SemiBold,
                             color = palette.primaryText
@@ -1835,7 +2284,6 @@ private fun TextSettingsDialog(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Interactive 7-dot stepped slider canvas
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1868,7 +2316,6 @@ private fun TextSettingsDialog(
                         val activeFrac = activeIndex.toFloat() / (AllowedTextScales.size - 1)
                         val activeX = pad + usable * activeFrac
 
-                        // Track background
                         drawLine(
                             color = palette.subtleSurface,
                             start = Offset(pad, cy),
@@ -1876,7 +2323,6 @@ private fun TextSettingsDialog(
                             strokeWidth = 6.dp.toPx(),
                             cap = androidx.compose.ui.graphics.StrokeCap.Round
                         )
-                        // Active track fill
                         drawLine(
                             color = palette.accent,
                             start = Offset(pad, cy),
@@ -1884,7 +2330,6 @@ private fun TextSettingsDialog(
                             strokeWidth = 6.dp.toPx(),
                             cap = androidx.compose.ui.graphics.StrokeCap.Round
                         )
-                        // 7 Step Dots
                         for (i in AllowedTextScales.indices) {
                             val dotFrac = i.toFloat() / (AllowedTextScales.size - 1)
                             val dotX = pad + usable * dotFrac
@@ -1894,7 +2339,6 @@ private fun TextSettingsDialog(
                                 center = Offset(dotX, cy)
                             )
                         }
-                        // Active Thumb
                         drawCircle(
                             color = palette.windowBg,
                             radius = 9.5.dp.toPx(),
@@ -1918,7 +2362,7 @@ private fun TextSettingsDialog(
                     }
                 }
 
-                // 2. Contrast & Weight
+                // 8. Contrast & Weight
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1978,134 +2422,6 @@ private fun TextSettingsDialog(
                     }
                 }
 
-                // 3. Primary Text Color Squircles (5 Presets + 6th Fitted Color Wheel Squircle)
-                ColorSquircleSection(
-                    title = "Main Heading & Value Text Color",
-                    presets = listOf("#FFFFFF", "#18181B", "#F87171", "#4ADE80", "#60A5FA"),
-                    currentSetting = primaryColorSetting,
-                    squircleSize = squircleSize,
-                    squircleShape = squircleShape,
-                    squircleWheelBitmap = squircleWheelBitmap,
-                    palette = palette,
-                    textScale = textScale,
-                    onPresetClick = onPrimaryColorChange,
-                    onWheelSquircleClick = {
-                        activeWheelTarget = if (activeWheelTarget == "Primary") null else "Primary"
-                    }
-                )
-
-                // 4. Secondary Text Color Squircles (5 Presets + 6th Fitted Color Wheel Squircle)
-                ColorSquircleSection(
-                    title = "Descriptions, FAQ Answers & Hint Text Color",
-                    presets = listOf("#DBDDE4", "#FFFFFF", "#FBBF24", "#34D399", "#38BDF8"),
-                    currentSetting = secondaryColorSetting,
-                    squircleSize = squircleSize,
-                    squircleShape = squircleShape,
-                    squircleWheelBitmap = squircleWheelBitmap,
-                    palette = palette,
-                    textScale = textScale,
-                    onPresetClick = onSecondaryColorChange,
-                    onWheelSquircleClick = {
-                        activeWheelTarget = if (activeWheelTarget == "Secondary") null else "Secondary"
-                    }
-                )
-
-                // Interactive Circular HSV Color Wheel Picker
-                AnimatedVisibility(visible = activeWheelTarget != null) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(palette.tileBg)
-                            .border(1.5.dp, palette.accent, RoundedCornerShape(14.dp))
-                            .padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = if (activeWheelTarget == "Primary") "Custom Main Heading Color" else "Custom Description / FAQ Color",
-                            fontSize = (12.5f * textScale).sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = palette.primaryText,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .size(140.dp)
-                                .pointerInput(activeWheelTarget) {
-                                    detectTapGestures { offset ->
-                                        val r = size.width / 2f
-                                        val dx = offset.x - r
-                                        val dy = offset.y - r
-                                        val dist = min(hypot(dx, dy), r)
-                                        var deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
-                                        if (deg < 0f) deg += 360f
-                                        wheelHue = deg
-                                        wheelSat = (dist / r).coerceIn(0f, 1f)
-                                        val hex = hsvToHex(wheelHue, wheelSat, wheelVal)
-                                        if (activeWheelTarget == "Primary") onPrimaryColorChange(hex)
-                                        else onSecondaryColorChange(hex)
-                                    }
-                                }
-                                .pointerInput(activeWheelTarget) {
-                                    detectDragGestures { change, _ ->
-                                        change.consume()
-                                        val r = size.width / 2f
-                                        val dx = change.position.x - r
-                                        val dy = change.position.y - r
-                                        val dist = min(hypot(dx, dy), r)
-                                        var deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat() + 90f
-                                        if (deg < 0f) deg += 360f
-                                        wheelHue = deg
-                                        wheelSat = (dist / r).coerceIn(0f, 1f)
-                                        val hex = hsvToHex(wheelHue, wheelSat, wheelVal)
-                                        if (activeWheelTarget == "Primary") onPrimaryColorChange(hex)
-                                        else onSecondaryColorChange(hex)
-                                    }
-                                }
-                        ) {
-                            Image(
-                                bitmap = circularWheelBitmap,
-                                contentDescription = "Color Wheel",
-                                modifier = Modifier.fillMaxSize()
-                            )
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val r = size.width / 2f
-                                val rad = Math.toRadians((wheelHue - 90f).toDouble())
-                                val cx = r + (wheelSat * r * cos(rad)).toFloat()
-                                val cy = r + (wheelSat * r * sin(rad)).toFloat()
-                                drawCircle(
-                                    color = Color.White,
-                                    radius = 6.dp.toPx(),
-                                    center = Offset(cx, cy),
-                                    style = Stroke(width = 2.2.dp.toPx())
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Brightness",
-                            fontSize = (11f * textScale).sp,
-                            color = palette.secondaryText
-                        )
-                        Slider(
-                            value = wheelVal,
-                            onValueChange = {
-                                wheelVal = it
-                                val hex = hsvToHex(wheelHue, wheelSat, wheelVal)
-                                if (activeWheelTarget == "Primary") onPrimaryColorChange(hex)
-                                else onSecondaryColorChange(hex)
-                            },
-                            valueRange = 0.2f..1.0f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = palette.accent,
-                                activeTrackColor = palette.accent
-                            )
-                        )
-                    }
-                }
-
                 // Bottom Reset & Done Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2157,7 +2473,8 @@ private fun ColorSquircleSection(
     palette: AppPalette,
     textScale: Float,
     onPresetClick: (String) -> Unit,
-    onWheelSquircleClick: () -> Unit
+    onWheelSquircleClick: () -> Unit,
+    wheelContent: @Composable () -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -2175,119 +2492,410 @@ private fun ColorSquircleSection(
             modifier = Modifier.padding(bottom = 9.dp)
         )
 
-        val matchedPreset = presets.any { it.equals(currentSetting, ignoreCase = true) }
-        val isCustomWheel = !matchedPreset && !currentSetting.equals("Auto", ignoreCase = true)
+        SquircleRow(
+            presets = presets,
+            currentSetting = currentSetting,
+            squircleSize = squircleSize,
+            squircleShape = squircleShape,
+            squircleWheelBitmap = squircleWheelBitmap,
+            palette = palette,
+            onPresetClick = onPresetClick,
+            onWheelSquircleClick = onWheelSquircleClick
+        )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            presets.forEach { hex ->
-                val isSelected = currentSetting.equals(hex, ignoreCase = true)
-                Box(
-                    modifier = Modifier
-                        .size(squircleSize)
-                        .clip(squircleShape)
-                        .background(parseHexColor(hex, Color.White))
-                        .border(
-                            width = if (isSelected) 3.dp else 1.5.dp,
-                            color = if (isSelected) palette.accent else palette.tileBorder,
-                            shape = squircleShape
-                        )
-                        .clickable { onPresetClick(hex) }
-                )
-            }
+        wheelContent()
+    }
+}
 
-            // 6th Squircle: Color Wheel clipped strictly inside the squircle shape and underneath the border
+@Composable
+private fun SquircleRow(
+    presets: List<String>,
+    currentSetting: String,
+    squircleSize: Dp,
+    squircleShape: RoundedCornerShape,
+    squircleWheelBitmap: androidx.compose.ui.graphics.ImageBitmap,
+    palette: AppPalette,
+    onPresetClick: (String) -> Unit,
+    onWheelSquircleClick: () -> Unit
+) {
+    val matchedPreset = presets.any { it.equals(currentSetting, ignoreCase = true) }
+    val isCustomWheel = !matchedPreset && !currentSetting.equals("Auto", ignoreCase = true)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        presets.forEach { hex ->
+            val isSelected = currentSetting.equals(hex, ignoreCase = true)
             Box(
                 modifier = Modifier
                     .size(squircleSize)
                     .clip(squircleShape)
+                    .background(parseHexColor(hex, Color.White))
                     .border(
-                        width = if (isCustomWheel) 3.dp else 1.5.dp,
-                        color = if (isCustomWheel) palette.accent else palette.tileBorder,
+                        width = if (isSelected) 3.dp else 1.5.dp,
+                        color = if (isSelected) palette.accent else palette.tileBorder,
                         shape = squircleShape
                     )
-                    .clickable { onWheelSquircleClick() }
-            ) {
-                Image(
-                    bitmap = squircleWheelBitmap,
-                    contentDescription = "Custom Color Wheel",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(squircleShape)
+                    .clickable { onPresetClick(hex) }
+            )
+        }
+
+        // 6th Squircle: Color Wheel clipped strictly inside the squircle shape and underneath the border
+        Box(
+            modifier = Modifier
+                .size(squircleSize)
+                .clip(squircleShape)
+                .border(
+                    width = if (isCustomWheel) 3.dp else 1.5.dp,
+                    color = if (isCustomWheel) palette.accent else palette.tileBorder,
+                    shape = squircleShape
                 )
-            }
+                .clickable { onWheelSquircleClick() }
+        ) {
+            Image(
+                bitmap = squircleWheelBitmap,
+                contentDescription = "Custom Color Wheel",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(squircleShape)
+            )
         }
     }
 }
 
+private data class PresetColors(
+    val windowBg: Color,
+    val tileBg: Color,
+    val menuSurface: Color,
+    val popupBg: Color,
+    val faqAnswerBg: Color,
+    val primaryText: Color,
+    val secondaryText: Color,
+    val accentOverride: Color?
+)
+
+private fun getPresetColors(presetKey: String, isDark: Boolean, highContrast: Boolean): PresetColors {
+    val key = presetKey.trim().lowercase()
+    return if (isDark) {
+        when (key) {
+            "ocean" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFF09101E) else Color(0xFF0F172A),
+                tileBg = if (highContrast) Color(0xFF152238) else Color(0xFF1E293B),
+                menuSurface = Color(0xFF1E293B),
+                popupBg = Color(0xFF162032),
+                faqAnswerBg = Color(0xFF0B1220),
+                primaryText = Color(0xFFF8FAFC),
+                secondaryText = if (highContrast) Color(0xFFE2E8F0) else Color(0xFFBDCCDF),
+                accentOverride = Color(0xFF38BDF8)
+            )
+            "amethyst" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFF100B1C) else Color(0xFF161124),
+                tileBg = if (highContrast) Color(0xFF1D1530) else Color(0xFF231B38),
+                menuSurface = Color(0xFF251C3B),
+                popupBg = Color(0xFF1C152E),
+                faqAnswerBg = Color(0xFF120D1E),
+                primaryText = Color(0xFFFAF5FF),
+                secondaryText = if (highContrast) Color(0xFFEDE9FE) else Color(0xFFD8CEF2),
+                accentOverride = Color(0xFFA855F7)
+            )
+            "emerald" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFF07120F) else Color(0xFF0C1915),
+                tileBg = if (highContrast) Color(0xFF11221D) else Color(0xFF152822),
+                menuSurface = Color(0xFF172B25),
+                popupBg = Color(0xFF11211C),
+                faqAnswerBg = Color(0xFF091411),
+                primaryText = Color(0xFFECFDF5),
+                secondaryText = if (highContrast) Color(0xFFD1FAE5) else Color(0xFFBAE6D4),
+                accentOverride = Color(0xFF10B981)
+            )
+            "ember" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFF140D0B) else Color(0xFF1C1311),
+                tileBg = if (highContrast) Color(0xFF241714) else Color(0xFF2B1D1A),
+                menuSurface = Color(0xFF2E1F1C),
+                popupBg = Color(0xFF231715),
+                faqAnswerBg = Color(0xFF160F0D),
+                primaryText = Color(0xFFFFF7ED),
+                secondaryText = if (highContrast) Color(0xFFFFEDD5) else Color(0xFFEBCEBE),
+                accentOverride = Color(0xFFF97316)
+            )
+            else -> PresetColors(
+                windowBg = if (highContrast) Color(0xFF0E0E11) else Color(0xFF16161A),
+                tileBg = if (highContrast) Color(0xFF1C1C22) else Color(0xFF222228),
+                menuSurface = if (highContrast) Color(0xFF18181E) else Color(0xFF24242B),
+                popupBg = if (highContrast) Color(0xFF121216) else Color(0xFF1D1D23),
+                faqAnswerBg = if (highContrast) Color(0xFF0A0A0D) else Color(0xFF141418),
+                primaryText = if (highContrast) Color(0xFFFFFFFF) else Color(0xFFFAFAFC),
+                secondaryText = if (highContrast) Color(0xFFF8F9FA) else Color(0xFFDBDDE4),
+                accentOverride = null
+            )
+        }
+    } else {
+        when (key) {
+            "ocean" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFFE2EEFF) else Color(0xFFEDF5FF),
+                tileBg = Color(0xFFFFFFFF),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                faqAnswerBg = Color(0xFFE4F0FF),
+                primaryText = Color(0xFF0F172A),
+                secondaryText = if (highContrast) Color(0xFF1E293B) else Color(0xFF334155),
+                accentOverride = Color(0xFF2563EB)
+            )
+            "amethyst" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFFEDE5FF) else Color(0xFFF5F0FF),
+                tileBg = Color(0xFFFFFFFF),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                faqAnswerBg = Color(0xFFEEE6FF),
+                primaryText = Color(0xFF1E1035),
+                secondaryText = if (highContrast) Color(0xFF2E1065) else Color(0xFF4C1D95),
+                accentOverride = Color(0xFF7C3AED)
+            )
+            "emerald" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFFE0F2EA) else Color(0xFFECF7F2),
+                tileBg = Color(0xFFFFFFFF),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                faqAnswerBg = Color(0xFFE3F3EC),
+                primaryText = Color(0xFF06281E),
+                secondaryText = if (highContrast) Color(0xFF064E3B) else Color(0xFF1E4638),
+                accentOverride = Color(0xFF059669)
+            )
+            "ember" -> PresetColors(
+                windowBg = if (highContrast) Color(0xFFFAECDE) else Color(0xFFFDF5EC),
+                tileBg = Color(0xFFFFFFFF),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                faqAnswerBg = Color(0xFFFAEBDC),
+                primaryText = Color(0xFF27150B),
+                secondaryText = if (highContrast) Color(0xFF431407) else Color(0xFF5C341D),
+                accentOverride = Color(0xFFEA580C)
+            )
+            else -> PresetColors(
+                windowBg = if (highContrast) Color(0xFFEEF0F4) else Color(0xFFF3F4F7),
+                tileBg = Color(0xFFFFFFFF),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                faqAnswerBg = if (highContrast) Color(0xFFE8ECF2) else Color(0xFFF2F4F8),
+                primaryText = if (highContrast) Color(0xFF000000) else Color(0xFF141417),
+                secondaryText = if (highContrast) Color(0xFF141518) else Color(0xFF383A42),
+                accentOverride = null
+            )
+        }
+    }
+}
+
+private fun shiftColor(c: Color, delta: Float): Color {
+    return Color(
+        red = (c.red + delta).coerceIn(0f, 1f),
+        green = (c.green + delta).coerceIn(0f, 1f),
+        blue = (c.blue + delta).coerceIn(0f, 1f),
+        alpha = c.alpha
+    )
+}
+
 private fun buildPalette(
     isDark: Boolean,
+    themePreset: String,
     highContrast: Boolean,
+    accentSetting: String,
+    windowBgSetting: String,
+    tileBgSetting: String,
     primarySetting: String,
     secondarySetting: String,
-    accent: Color
+    systemAccent: Color
 ): AppPalette {
-    val defaultPrimary = if (isDark) {
-        if (highContrast) Color(0xFFFFFFFF) else Color(0xFFFAFAFC)
+    val preset = getPresetColors(themePreset, isDark, highContrast)
+
+    val customWin = !windowBgSetting.equals("Auto", ignoreCase = true)
+    val customTile = !tileBgSetting.equals("Auto", ignoreCase = true)
+
+    val windowBg = if (customWin) parseHexColor(windowBgSetting, preset.windowBg) else preset.windowBg
+    val tileBg = if (customTile) parseHexColor(tileBgSetting, preset.tileBg) else preset.tileBg
+    val accent = if (!accentSetting.equals("Auto", ignoreCase = true)) {
+        parseHexColor(accentSetting, preset.accentOverride ?: systemAccent)
     } else {
-        if (highContrast) Color(0xFF000000) else Color(0xFF141417)
+        preset.accentOverride ?: systemAccent
     }
 
-    val defaultSecondary = if (isDark) {
-        if (highContrast) Color(0xFFF8F9FA) else Color(0xFFDBDDE4)
-    } else {
-        if (highContrast) Color(0xFF141518) else Color(0xFF383A42)
-    }
+    val menuSurface = if (customTile) shiftColor(tileBg, if (isDark) 0.02f else 0f) else preset.menuSurface
+    val popupBg = if (customTile) shiftColor(tileBg, if (isDark) -0.02f else 0f) else preset.popupBg
+    val faqAnswerBg = if (customTile || customWin) shiftColor(windowBg, -0.02f) else preset.faqAnswerBg
 
     val primaryText = if (primarySetting.equals("Auto", ignoreCase = true)) {
-        defaultPrimary
+        preset.primaryText
     } else {
-        parseHexColor(primarySetting, defaultPrimary)
+        parseHexColor(primarySetting, preset.primaryText)
     }
 
     val secondaryText = if (secondarySetting.equals("Auto", ignoreCase = true)) {
-        defaultSecondary
+        preset.secondaryText
     } else {
-        parseHexColor(secondarySetting, defaultSecondary)
+        parseHexColor(secondarySetting, preset.secondaryText)
     }
 
     val luminance = 0.299f * accent.red + 0.587f * accent.green + 0.114f * accent.blue
     val onAccent = if (luminance > 0.62f) Color(0xFF121214) else Color(0xFFFFFFFF)
 
-    return if (isDark) {
-        AppPalette(
-            windowBg = if (highContrast) Color(0xFF0E0E11) else Color(0xFF16161A),
-            tileBg = if (highContrast) Color(0xFF1C1C22) else Color(0xFF222228),
-            tileBorder = if (highContrast) Color(0x88FFFFFF) else Color(0x45FFFFFF),
-            menuSurface = if (highContrast) Color(0xFF18181E) else Color(0xFF24242B),
-            popupBg = if (highContrast) Color(0xFF121216) else Color(0xFF1D1D23),
-            faqAnswerBg = if (highContrast) Color(0xFF0A0A0D) else Color(0xFF141418),
-            subtleSurface = if (highContrast) Color(0x2CFFFFFF) else Color(0x1AFFFFFF),
-            primaryText = primaryText,
-            secondaryText = secondaryText,
-            accent = accent,
-            onAccent = onAccent,
-            accentSubtle = accent.copy(alpha = 0.26f)
+    return AppPalette(
+        windowBg = windowBg,
+        tileBg = tileBg,
+        tileBorder = if (isDark) {
+            if (highContrast) Color(0x88FFFFFF) else Color(0x45FFFFFF)
+        } else {
+            if (highContrast) Color(0x75000000) else Color(0x2D000000)
+        },
+        menuSurface = menuSurface,
+        popupBg = popupBg,
+        faqAnswerBg = faqAnswerBg,
+        subtleSurface = if (isDark) {
+            if (highContrast) Color(0x2CFFFFFF) else Color(0x1AFFFFFF)
+        } else {
+            if (highContrast) Color(0x22000000) else Color(0x14000000)
+        },
+        primaryText = primaryText,
+        secondaryText = secondaryText,
+        accent = accent,
+        onAccent = onAccent,
+        accentSubtle = accent.copy(alpha = if (isDark) 0.26f else 0.18f)
+    )
+}
+
+// --- Android Program Icon Rendering, Recents TaskDescription & Home Screen Alias Switcher ---
+private fun createCustomAppIconBitmap(context: Context, bgHex: String, fgHex: String, size: Int): Bitmap {
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bmp)
+    val bgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = try {
+            android.graphics.Color.parseColor(bgHex.trim())
+        } catch (_: Exception) {
+            android.graphics.Color.parseColor("#18181B")
+        }
+    }
+    val radius = size * 0.22f
+    canvas.drawRoundRect(0f, 0f, size.toFloat(), size.toFloat(), radius, radius, bgPaint)
+
+    try {
+        val fgBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.ic_launcher_foreground_img)
+        if (fgBitmap != null) {
+            val fgColor = try {
+                android.graphics.Color.parseColor(fgHex.trim())
+            } catch (_: Exception) {
+                android.graphics.Color.WHITE
+            }
+            val fgPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG or android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+                colorFilter = PorterDuffColorFilter(fgColor, PorterDuff.Mode.SRC_IN)
+            }
+            val dstRect = android.graphics.Rect(0, 0, size, size)
+            canvas.drawBitmap(fgBitmap, null, dstRect, fgPaint)
+        }
+    } catch (_: Exception) {
+        // Ignore if foreground bitmap decode fails
+    }
+
+    return bmp
+}
+
+@Suppress("DEPRECATION")
+private fun updateTaskDescriptionIcon(context: Context, bgHex: String, fgHex: String) {
+    val activity = context as? Activity ?: return
+    try {
+        val iconBmp = createCustomAppIconBitmap(context, bgHex, fgHex, 128)
+        val primaryRgb = try {
+            android.graphics.Color.parseColor(bgHex.trim())
+        } catch (_: Exception) {
+            android.graphics.Color.parseColor("#18181B")
+        }
+        activity.setTaskDescription(ActivityManager.TaskDescription("WaddleFree", iconBmp, primaryRgb))
+    } catch (_: Exception) {
+        // Ignore on unsupported OEM ROMs
+    }
+}
+
+private val LauncherBgAliases = listOf(
+    "dark" to "#18181B",
+    "blue" to "#1E3A8A",
+    "purple" to "#4C1D95",
+    "green" to "#065F46",
+    "light" to "#F4F4F6",
+    "orange" to "#9A3412",
+    "rose" to "#881337"
+)
+
+private val LauncherFgAliases = listOf(
+    "white" to "#FFFFFF",
+    "black" to "#18181B",
+    "sky" to "#38BDF8",
+    "mint" to "#4ADE80",
+    "gold" to "#FBBF24",
+    "coral" to "#F87171",
+    "violet" to "#C084FC"
+)
+
+private fun closestAliasKey(targetHex: String, candidates: List<Pair<String, String>>, defaultKey: String): String {
+    val targetRgb = try {
+        android.graphics.Color.parseColor(targetHex.trim())
+    } catch (_: Exception) {
+        return defaultKey
+    }
+    val tr = (targetRgb shr 16) and 0xFF
+    val tg = (targetRgb shr 8) and 0xFF
+    val tb = targetRgb and 0xFF
+
+    var bestKey = defaultKey
+    var bestDist = Int.MAX_VALUE
+    for ((key, hex) in candidates) {
+        val cRgb = android.graphics.Color.parseColor(hex)
+        val cr = (cRgb shr 16) and 0xFF
+        val cg = (cRgb shr 8) and 0xFF
+        val cb = cRgb and 0xFF
+        val dist = (tr - cr) * (tr - cr) + (tg - cg) * (tg - cg) + (tb - cb) * (tb - cb)
+        if (dist < bestDist) {
+            bestDist = dist
+            bestKey = key
+        }
+    }
+    return bestKey
+}
+
+private fun syncLauncherIconAlias(context: Context, prefs: MobilePrefs, bgHex: String, fgHex: String) {
+    try {
+        val bgKey = closestAliasKey(bgHex, LauncherBgAliases, "dark")
+        val fgKey = closestAliasKey(fgHex, LauncherFgAliases, "white")
+        val desiredAlias = if (bgKey == "dark" && fgKey == "white") {
+            ".LauncherDefault"
+        } else {
+            ".Launcher_${bgKey}_${fgKey}"
+        }
+
+        val currentAlias = prefs.activeLauncherAlias
+        if (currentAlias == desiredAlias) return
+
+        val pm = context.packageManager
+        val pkg = context.packageName
+
+        // Enable the new alias first so the app always has an active LAUNCHER entry
+        pm.setComponentEnabledSetting(
+            ComponentName(pkg, "$pkg$desiredAlias"),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
         )
-    } else {
-        AppPalette(
-            windowBg = if (highContrast) Color(0xFFEEF0F4) else Color(0xFFF3F4F7),
-            tileBg = Color(0xFFFFFFFF),
-            tileBorder = if (highContrast) Color(0x75000000) else Color(0x2D000000),
-            menuSurface = Color(0xFFFFFFFF),
-            popupBg = Color(0xFFFFFFFF),
-            faqAnswerBg = if (highContrast) Color(0xFFE8ECF2) else Color(0xFFF2F4F8),
-            subtleSurface = if (highContrast) Color(0x22000000) else Color(0x14000000),
-            primaryText = primaryText,
-            secondaryText = secondaryText,
-            accent = accent,
-            onAccent = onAccent,
-            accentSubtle = accent.copy(alpha = 0.18f)
+
+        // Disable the previous alias
+        pm.setComponentEnabledSetting(
+            ComponentName(pkg, "$pkg$currentAlias"),
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP
         )
+
+        prefs.activeLauncherAlias = desiredAlias
+    } catch (_: Exception) {
+        // Ignore if launcher blocks dynamic alias toggling
     }
 }
 
