@@ -655,6 +655,20 @@ namespace WaddleFree.Desktop
 
         private static System.Drawing.Icon CreateTrayIcon(System.Drawing.Color accentColor)
         {
+            try
+            {
+                var streamInfo = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico"));
+                if (streamInfo?.Stream != null)
+                {
+                    using var stream = streamInfo.Stream;
+                    return new System.Drawing.Icon(stream, new System.Drawing.Size(32, 32));
+                }
+            }
+            catch
+            {
+                // Fallback to procedural icon if resource stream fails
+            }
+
             using var bmp = new Bitmap(32, 32);
             using (var g = Graphics.FromImage(bmp))
             {
