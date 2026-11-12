@@ -110,11 +110,6 @@
                                     Tag="Default"
                                     Style="{StaticResource OptionPillStyle}"
                                     Click="PresetBtn_Click"/>
-                            <Button x:Name="PresetOledBtn"
-                                    Content="OLED"
-                                    Tag="OLED"
-                                    Style="{StaticResource OptionPillStyle}"
-                                    Click="PresetBtn_Click"/>
                             <Button x:Name="PresetOceanBtn"
                                     Content="Midnight"
                                     Tag="Ocean"
@@ -133,6 +128,11 @@
                             <Button x:Name="PresetEmberBtn"
                                     Content="Ember"
                                     Tag="Ember"
+                                    Style="{StaticResource OptionPillStyle}"
+                                    Click="PresetBtn_Click"/>
+                            <Button x:Name="PresetOledBtn"
+                                    Content="OLED"
+                                    Tag="Oled"
                                     Style="{StaticResource OptionPillStyle}"
                                     Click="PresetBtn_Click"/>
                         </WrapPanel>
