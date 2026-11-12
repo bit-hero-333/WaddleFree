@@ -78,7 +78,7 @@ object PcCompanionClient {
         coroutineScope {
             val deferreds = candidatePorts.map { port ->
                 async {
-                    queryHttpEndpoint(ipAddress, port, "/status", deviceId)
+                    queryHttpEndpoint(ipAddress, port, "/status", deviceId, connectTimeoutMs = 550, readTimeoutMs = 700)
                 }
             }
             val results = deferreds.awaitAll()
@@ -104,18 +104,24 @@ object PcCompanionClient {
             }
         }
 
-        for (port in candidatePorts) {
-            val res = queryHttpEndpoint(ipAddress, port, "/sleep", deviceId)
-            if (res.isAwake) return@withContext true
+        coroutineScope {
+            val deferreds = candidatePorts.map { port ->
+                async {
+                    queryHttpEndpoint(ipAddress, port, "/sleep", deviceId, connectTimeoutMs = 550, readTimeoutMs = 700)
+                }
+            }
+            val results = deferreds.awaitAll()
+            results.any { it.isAwake }
         }
-        false
     }
 
     private fun queryHttpEndpoint(
         ipAddress: String,
         port: Int,
         path: String,
-        deviceId: String
+        deviceId: String,
+        connectTimeoutMs: Int = 550,
+        readTimeoutMs: Int = 700
     ): PcStatusResult {
         var conn: HttpURLConnection? = null
         return try {
@@ -126,8 +132,8 @@ object PcCompanionClient {
 
             conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = if (path == "/sleep") "POST" else "GET"
-                connectTimeout = 900
-                readTimeout = 1100
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
                 setRequestProperty("X-Device-Id", deviceId)
                 setRequestProperty("X-Device-Name", deviceName)
             }

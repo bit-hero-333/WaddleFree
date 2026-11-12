@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.waddlefree.mobile.MainActivity
@@ -25,6 +26,8 @@ class WaddleFreeTileService : TileService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusJob: Job? = null
     private var actionJob: Job? = null
+    private var hasVerifiedStatusThisSession = false
+    private var lastActionCompletedAtMs = 0L
 
     override fun onTileAdded() {
         super.onTileAdded()
@@ -40,7 +43,11 @@ class WaddleFreeTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         val prefs = MobilePrefs(this)
-        // Immediately render cached state so there is zero visual delay when pulling down the shade
+        hasVerifiedStatusThisSession = false
+
+        // Do not overwrite tile visuals if an action is currently running
+        if (actionJob?.isActive == true) return
+
         applyTileVisuals(
             prefs = prefs,
             isAwake = prefs.lastKnownAwake,
@@ -56,6 +63,14 @@ class WaddleFreeTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
+        val now = SystemClock.elapsedRealtime()
+
+        // Ignore rapid successive clicks while an action is running or during the 3-second cooldown
+        // so extra taps never cancel an in-flight command or flip modes back and forth
+        if (actionJob?.isActive == true || (now - lastActionCompletedAtMs) < 3000L) {
+            return
+        }
+
         val prefs = MobilePrefs(this)
         val ip = prefs.fullIp
         val mac = prefs.fullMac
@@ -63,64 +78,78 @@ class WaddleFreeTileService : TileService() {
         val hasValidIp = PcCompanionClient.isValidIpv4(ip)
         val hasValidMac = PcCompanionClient.parseMacBytes(mac) != null
 
-        // If neither IP nor MAC is configured yet, open MainActivity so the user can enter them
         if (!hasValidIp && !hasValidMac) {
             openMainApp()
             return
         }
 
-        statusJob?.cancel()
-        actionJob?.cancel()
-
-        val currentlyActive = qsTile?.state == Tile.STATE_ACTIVE || prefs.lastKnownAwake
-
         actionJob = serviceScope.launch {
-            if (currentlyActive && hasValidIp) {
-                // Optimistic instant visual flip to Sleeping (Unlit) for both Small (1x1) and Large (2x1) tiles
-                prefs.lastKnownAwake = false
-                applyTileVisuals(
-                    prefs = prefs,
-                    isAwake = false,
-                    overrideSubtitle = "Putting to sleep…"
-                )
+            try {
+                // If the initial status check from pulling down the shade is still in flight,
+                // wait for it (or verify now) so the very first tap always acts on the true PC state
+                if (statusJob?.isActive == true) {
+                    statusJob?.join()
+                } else if (!hasVerifiedStatusThisSession && hasValidIp) {
+                    val live = PcCompanionClient.checkPcStatus(ip, mac, prefs.deviceId, prefs.cachedPort)
+                    if (live.isAwake) {
+                        if (live.pcName.isNotBlank()) prefs.lastPcName = live.pcName
+                        if (live.activePort in 1024..49151) prefs.cachedPort = live.activePort
+                    }
+                    prefs.lastKnownAwake = live.isAwake
+                    hasVerifiedStatusThisSession = true
+                }
 
-                val sentSleep = PcCompanionClient.sendSleepCommand(
-                    ipAddress = ip,
-                    macAddress = mac,
-                    deviceId = prefs.deviceId,
-                    cachedPort = prefs.cachedPort
-                )
+                val isCurrentlyAwake = prefs.lastKnownAwake
 
-                if (sentSleep) {
+                if (isCurrentlyAwake && hasValidIp) {
+                    // PC is Awake -> Put PC to Sleep immediately
                     prefs.lastKnownAwake = false
                     applyTileVisuals(
                         prefs = prefs,
                         isAwake = false,
-                        overrideSubtitle = null
+                        overrideSubtitle = "Putting to sleep…"
                     )
-                } else {
-                    // Check if the PC was actually already asleep; if so, wake it up instead
-                    val verify = PcCompanionClient.checkPcStatus(ip, mac, prefs.deviceId, prefs.cachedPort)
-                    if (!verify.isAwake && hasValidMac) {
-                        triggerWakeSequence(prefs, ip, mac)
+
+                    val sentSleep = PcCompanionClient.sendSleepCommand(
+                        ipAddress = ip,
+                        macAddress = mac,
+                        deviceId = prefs.deviceId,
+                        cachedPort = prefs.cachedPort
+                    )
+
+                    lastActionCompletedAtMs = SystemClock.elapsedRealtime()
+
+                    if (sentSleep) {
+                        prefs.lastKnownAwake = false
+                        applyTileVisuals(
+                            prefs = prefs,
+                            isAwake = false,
+                            overrideSubtitle = "Sleeping • Tap to wake"
+                        )
                     } else {
-                        prefs.lastKnownAwake = verify.isAwake
-                        applyTileVisuals(prefs = prefs, isAwake = verify.isAwake, overrideSubtitle = null)
+                        // PC didn't answer /sleep (was already asleep) -> send Wake-on-LAN instead
+                        if (hasValidMac) {
+                            executeWake(prefs, ip, mac)
+                        } else {
+                            prefs.lastKnownAwake = false
+                            applyTileVisuals(prefs = prefs, isAwake = false, overrideSubtitle = null)
+                        }
                     }
+                } else {
+                    // PC is Sleeping -> Wake PC via Magic Packet
+                    if (!hasValidMac) {
+                        openMainApp()
+                        return@launch
+                    }
+                    executeWake(prefs, ip, mac)
                 }
-            } else {
-                // Currently sleeping -> Wake PC via Magic Packet
-                if (!hasValidMac) {
-                    openMainApp()
-                    return@launch
-                }
-                triggerWakeSequence(prefs, ip, mac)
+            } finally {
+                lastActionCompletedAtMs = SystemClock.elapsedRealtime()
             }
         }
     }
 
-    private suspend fun triggerWakeSequence(prefs: MobilePrefs, ip: String, mac: String) {
-        // Optimistic instant visual flip to Active (Lit) for both Small (1x1) and Large (2x1) tiles
+    private suspend fun executeWake(prefs: MobilePrefs, ip: String, mac: String) {
         prefs.lastKnownAwake = true
         applyTileVisuals(
             prefs = prefs,
@@ -129,6 +158,8 @@ class WaddleFreeTileService : TileService() {
         )
 
         val packetSent = PcCompanionClient.sendWakeOnLanMagicPacket(ip, mac)
+        lastActionCompletedAtMs = SystemClock.elapsedRealtime()
+
         if (!packetSent) {
             prefs.lastKnownAwake = false
             applyTileVisuals(
@@ -139,7 +170,7 @@ class WaddleFreeTileService : TileService() {
             return
         }
 
-        // Poll briefly while notification shade is open so subtitle updates as soon as PC comes online
+        // Poll in background after waking so the subtitle updates once Windows is online
         if (PcCompanionClient.isValidIpv4(ip)) {
             for (attempt in 1..6) {
                 delay(2000)
@@ -153,6 +184,7 @@ class WaddleFreeTileService : TileService() {
                     if (status.pcName.isNotBlank()) prefs.lastPcName = status.pcName
                     if (status.activePort in 1024..49151) prefs.cachedPort = status.activePort
                     prefs.lastKnownAwake = true
+                    hasVerifiedStatusThisSession = true
                     applyTileVisuals(prefs = prefs, isAwake = true, overrideSubtitle = null)
                     return
                 }
@@ -182,11 +214,15 @@ class WaddleFreeTileService : TileService() {
                 deviceId = prefs.deviceId,
                 cachedPort = prefs.cachedPort
             )
+            // Do not overwrite if user started an action while status check was running
+            if (actionJob?.isActive == true) return@launch
+
             if (res.isAwake) {
                 if (res.pcName.isNotBlank()) prefs.lastPcName = res.pcName
                 if (res.activePort in 1024..49151) prefs.cachedPort = res.activePort
             }
             prefs.lastKnownAwake = res.isAwake
+            hasVerifiedStatusThisSession = true
             applyTileVisuals(
                 prefs = prefs,
                 isAwake = res.isAwake,
