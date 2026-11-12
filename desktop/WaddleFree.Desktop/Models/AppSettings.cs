@@ -10,6 +10,7 @@ namespace WaddleFree.Desktop.Models
     {
         public string ThemePreference { get; set; } = "System"; // "System", "Dark", "Light"
         public string TrayBehavior { get; set; } = "Close"; // "Close", "Minimize", "Both", "None"
+        public string StartupMode { get; set; } = "Full"; // "Full", "Taskbar", "Tray"
         public int SelectedPort { get; set; } = 0; // Picked once from unreserved Zone 2 ports and persisted forever
 
         // Theme, Colors & Readability Customization

@@ -34,6 +34,7 @@ namespace WaddleFree.Desktop
         private bool _isGuideOpen;
         private bool _isPortInfoOpen;
         private bool _isInitializedPlacement;
+        private bool _isStartupComplete;
 
         public MainWindow()
         {
@@ -73,13 +74,48 @@ namespace WaddleFree.Desktop
 
             UpdateThemeButtonsVisualState();
             UpdateTrayButtonsAndHint();
+            UpdateStartupModeButtonsVisualState();
             RefreshNetworkDetails();
             RefreshConnectedDevicesUi();
             UpdateDynamicPopupConstraints();
             InitializeSystemTray();
 
+            ApplyStartupWindowMode();
+
             SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
             NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        }
+
+        private void ApplyStartupWindowMode()
+        {
+            string startupMode = (_settings.StartupMode ?? "Full").ToLowerInvariant();
+            if (startupMode == "tray")
+            {
+                ShowInTaskbar = false;
+                WindowState = WindowState.Minimized;
+                Opacity = 0;
+                Loaded += (_, _) =>
+                {
+                    Hide();
+                    Opacity = 1;
+                    _isStartupComplete = true;
+                };
+            }
+            else if (startupMode == "taskbar")
+            {
+                WindowState = WindowState.Minimized;
+                Loaded += (_, _) =>
+                {
+                    _isStartupComplete = true;
+                };
+            }
+            else
+            {
+                Loaded += (_, _) =>
+                {
+                    _isStartupComplete = true;
+                };
+            }
         }
 
         private static List<FaqItem> CreateFaqItems()
@@ -124,6 +160,16 @@ namespace WaddleFree.Desktop
                     Question = "What if my PC's local IP address changes?",
                     Answer =
                         "Routers occasionally reassign local IP addresses after a router reboot. To keep your PC's IP permanent, open your router settings (or Windows Network Settings) and assign a static local IP address for your PC."
+                },
+                new FaqItem
+                {
+                    Question = "How do I start WaddleFree automatically with Windows?",
+                    Answer =
+                        "WaddleFree never modifies your Windows Registry or system startup settings on its own.\n\n" +
+                        "1. Right-click WaddleFree.exe and select 'Create shortcut'.\n\n" +
+                        "2. Press Win + R, type shell:startup, and press Enter to open your Windows Startup folder.\n\n" +
+                        "3. Move the shortcut into that folder.\n\n" +
+                        "Tip: Use the 'On Start' option in the top-right menu to choose whether WaddleFree opens as a full window, minimized in the taskbar, or hidden in the system tray."
                 },
                 new FaqItem
                 {
@@ -378,6 +424,7 @@ namespace WaddleFree.Desktop
                 ThemeService.ApplyTheme(_settings, this);
                 UpdateThemeButtonsVisualState();
                 UpdateTrayButtonsAndHint();
+                UpdateStartupModeButtonsVisualState();
                 UpdateDynamicPopupConstraints();
                 UpdateTrayIcon();
             })
@@ -454,6 +501,7 @@ namespace WaddleFree.Desktop
             ThemeService.ApplyTheme(_settings, this);
             UpdateThemeButtonsVisualState();
             UpdateTrayButtonsAndHint();
+            UpdateStartupModeButtonsVisualState();
             _textSettingsWindow?.RefreshButtonsVisualState();
         }
 
@@ -486,14 +534,41 @@ namespace WaddleFree.Desktop
             StylePillButton(TrayCloseButton, behavior == "close");
             StylePillButton(TrayBothButton, behavior == "both");
             StylePillButton(TrayNoneButton, behavior == "none");
+        }
 
-            BottomTrayHintText.Text = behavior switch
+        // --- Startup Window Mode Options ---
+        private void StartFullButton_Click(object sender, RoutedEventArgs e) => SetStartupMode("Full");
+        private void StartTaskbarButton_Click(object sender, RoutedEventArgs e) => SetStartupMode("Taskbar");
+        private void StartTrayButton_Click(object sender, RoutedEventArgs e) => SetStartupMode("Tray");
+
+        private void SetStartupMode(string mode)
+        {
+            _settings.StartupMode = mode;
+            _settings.Save();
+            UpdateStartupModeButtonsVisualState();
+        }
+
+        private void UpdateStartupModeButtonsVisualState()
+        {
+            string mode = (_settings.StartupMode ?? "Full").ToLowerInvariant();
+            StylePillButton(StartFullButton, mode != "taskbar" && mode != "tray");
+            StylePillButton(StartTaskbarButton, mode == "taskbar");
+            StylePillButton(StartTrayButton, mode == "tray");
+        }
+
+        private void GitHubRepoButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
             {
-                "minimize" => "Minimizing this window sends WaddleFree to the system tray. Closing the window exits the program.",
-                "both" => "Minimizing or closing this window sends WaddleFree to the system tray so it stays ready for sleep signals.",
-                "none" => "System tray minimization is disabled. Closing this window will exit WaddleFree completely.",
-                _ => "Closing this window minimizes WaddleFree to the system tray so it stays ready for sleep signals."
-            };
+                Process.Start(new ProcessStartInfo("https://github.com/bit-hero-333/WaddleFree")
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // Ignore if browser launch fails
+            }
         }
 
         private void StylePillButton(System.Windows.Controls.Button btn, bool isActive)
@@ -676,6 +751,8 @@ namespace WaddleFree.Desktop
 
         private void ShowMainWindow()
         {
+            ShowInTaskbar = true;
+            Opacity = 1;
             Show();
             if (WindowState == WindowState.Minimized)
                 WindowState = WindowState.Normal;
@@ -692,10 +769,13 @@ namespace WaddleFree.Desktop
         {
             if (WindowState == WindowState.Minimized)
             {
-                string behavior = (_settings.TrayBehavior ?? "Close").ToLowerInvariant();
-                if (behavior == "minimize" || behavior == "both")
+                if (_isStartupComplete)
                 {
-                    Hide();
+                    string behavior = (_settings.TrayBehavior ?? "Close").ToLowerInvariant();
+                    if (behavior == "minimize" || behavior == "both")
+                    {
+                        Hide();
+                    }
                 }
             }
             else if (_isInitializedPlacement)
