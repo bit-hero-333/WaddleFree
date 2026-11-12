@@ -166,9 +166,8 @@ namespace WaddleFree.Desktop
                     Question = "How do I start WaddleFree automatically with Windows?",
                     Answer =
                         "WaddleFree never modifies your Windows Registry or system startup settings on its own.\n\n" +
-                        "1. Right-click WaddleFree.exe and select 'Create shortcut'.\n\n" +
-                        "2. Press Win + R, type shell:startup, and press Enter to open your Windows Startup folder.\n\n" +
-                        "3. Move the shortcut into that folder.\n\n" +
+                        "1. Press Win + R, type shell:startup, and press Enter to open your Windows Startup folder.\n\n" +
+                        "2. Right-click an empty area inside the Startup folder → New → Shortcut → Browse to WaddleFree.exe and finish (or hold Alt while dragging WaddleFree.exe into the Startup folder to create a shortcut directly).\n\n" +
                         "Tip: Use the 'On Start' option in the top-right menu to choose whether WaddleFree opens as a full window, minimized in the taskbar, or hidden in the system tray."
                 },
                 new FaqItem
