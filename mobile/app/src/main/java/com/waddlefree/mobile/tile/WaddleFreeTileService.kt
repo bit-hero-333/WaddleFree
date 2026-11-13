@@ -5,6 +5,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.SystemClock
 import android.service.quicksettings.Tile
@@ -19,14 +21,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 class WaddleFreeTileService : TileService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusJob: Job? = null
+    private var pollingJob: Job? = null
     private var actionJob: Job? = null
-    private var hasVerifiedStatusThisSession = false
+    private var isListening = false
+    private var lastVerifiedAtMs = 0L
     private var lastActionCompletedAtMs = 0L
 
     override fun onTileAdded() {
@@ -37,27 +42,37 @@ class WaddleFreeTileService : TileService() {
             isAwake = prefs.lastKnownAwake,
             overrideSubtitle = null
         )
-        refreshLiveStatus()
+        startLiveRefresh(showCheckingHint = false)
     }
 
     override fun onStartListening() {
         super.onStartListening()
+        isListening = true
         val prefs = MobilePrefs(this)
-        hasVerifiedStatusThisSession = false
 
         // Do not overwrite tile visuals if an action is currently running
         if (actionJob?.isActive == true) return
 
+        if (!isLocalNetworkConnected()) {
+            applyTileVisuals(prefs = prefs, isAwake = false, overrideSubtitle = "No Wi-Fi")
+            return
+        }
+
+        val isStale = (SystemClock.elapsedRealtime() - lastVerifiedAtMs) > 2500L
         applyTileVisuals(
             prefs = prefs,
             isAwake = prefs.lastKnownAwake,
-            overrideSubtitle = null
+            overrideSubtitle = if (isStale && PcCompanionClient.isValidIpv4(prefs.fullIp)) "Checking…" else null
         )
-        refreshLiveStatus()
+
+        startLiveRefresh(showCheckingHint = isStale)
+        startListeningPollLoop()
     }
 
     override fun onStopListening() {
-        statusJob?.cancel()
+        isListening = false
+        pollingJob?.cancel()
+        pollingJob = null
         super.onStopListening()
     }
 
@@ -83,27 +98,30 @@ class WaddleFreeTileService : TileService() {
             return
         }
 
+        if (!isLocalNetworkConnected()) {
+            applyTileVisuals(prefs = prefs, isAwake = false, overrideSubtitle = "No Wi-Fi")
+            return
+        }
+
         actionJob = serviceScope.launch {
             try {
-                // If the initial status check from pulling down the shade is still in flight,
-                // wait for it (or verify now) so the very first tap always acts on the true PC state
+                // Always act on a freshly verified PC status (within the last 2.5 seconds)
+                val needsVerify = (SystemClock.elapsedRealtime() - lastVerifiedAtMs) > 2500L
                 if (statusJob?.isActive == true) {
                     statusJob?.join()
-                } else if (!hasVerifiedStatusThisSession && hasValidIp) {
-                    val live = PcCompanionClient.checkPcStatus(ip, mac, prefs.deviceId, prefs.cachedPort)
-                    if (live.isAwake) {
-                        if (live.pcName.isNotBlank()) prefs.lastPcName = live.pcName
-                        if (live.activePort in 1024..49151) prefs.cachedPort = live.activePort
-                    }
-                    prefs.lastKnownAwake = live.isAwake
-                    hasVerifiedStatusThisSession = true
+                } else if (needsVerify && hasValidIp) {
+                    applyTileVisuals(
+                        prefs = prefs,
+                        isAwake = prefs.lastKnownAwake,
+                        overrideSubtitle = "Checking…"
+                    )
+                    verifyAndSaveStatus(prefs)
                 }
 
                 val isCurrentlyAwake = prefs.lastKnownAwake
 
                 if (isCurrentlyAwake && hasValidIp) {
                     // PC is Awake -> Put PC to Sleep immediately
-                    prefs.lastKnownAwake = false
                     applyTileVisuals(
                         prefs = prefs,
                         isAwake = false,
@@ -121,11 +139,18 @@ class WaddleFreeTileService : TileService() {
 
                     if (sentSleep) {
                         prefs.lastKnownAwake = false
+                        lastVerifiedAtMs = SystemClock.elapsedRealtime()
                         applyTileVisuals(
                             prefs = prefs,
                             isAwake = false,
                             overrideSubtitle = "Sleeping • Tap to wake"
                         )
+                        // Confirm PC actually entered sleep a moment later
+                        delay(2500)
+                        if (isListening) {
+                            verifyAndSaveStatus(prefs)
+                            applyTileVisuals(prefs = prefs, isAwake = prefs.lastKnownAwake, overrideSubtitle = null)
+                        }
                     } else {
                         // PC didn't answer /sleep (was already asleep) -> send Wake-on-LAN instead
                         if (hasValidMac) {
@@ -150,7 +175,6 @@ class WaddleFreeTileService : TileService() {
     }
 
     private suspend fun executeWake(prefs: MobilePrefs, ip: String, mac: String) {
-        prefs.lastKnownAwake = true
         applyTileVisuals(
             prefs = prefs,
             isAwake = true,
@@ -170,10 +194,10 @@ class WaddleFreeTileService : TileService() {
             return
         }
 
-        // Poll in background after waking so the subtitle updates once Windows is online
+        // Poll until Windows actually responds online; never leave lastKnownAwake=true unverified
         if (PcCompanionClient.isValidIpv4(ip)) {
-            for (attempt in 1..6) {
-                delay(2000)
+            for (attempt in 1..10) {
+                delay(1500)
                 val status = PcCompanionClient.checkPcStatus(
                     ipAddress = ip,
                     macAddress = mac,
@@ -184,17 +208,19 @@ class WaddleFreeTileService : TileService() {
                     if (status.pcName.isNotBlank()) prefs.lastPcName = status.pcName
                     if (status.activePort in 1024..49151) prefs.cachedPort = status.activePort
                     prefs.lastKnownAwake = true
-                    hasVerifiedStatusThisSession = true
+                    lastVerifiedAtMs = SystemClock.elapsedRealtime()
                     applyTileVisuals(prefs = prefs, isAwake = true, overrideSubtitle = null)
                     return
                 }
             }
         }
 
-        applyTileVisuals(prefs = prefs, isAwake = true, overrideSubtitle = "Magic Packet sent")
+        prefs.lastKnownAwake = false
+        lastVerifiedAtMs = SystemClock.elapsedRealtime()
+        applyTileVisuals(prefs = prefs, isAwake = false, overrideSubtitle = "No reply • Tap to retry")
     }
 
-    private fun refreshLiveStatus() {
+    private fun startLiveRefresh(showCheckingHint: Boolean) {
         val prefs = MobilePrefs(this)
         val ip = prefs.fullIp
         val mac = prefs.fullMac
@@ -206,28 +232,89 @@ class WaddleFreeTileService : TileService() {
             return
         }
 
-        statusJob?.cancel()
+        if (statusJob?.isActive == true) return
+
         statusJob = serviceScope.launch {
-            val res = PcCompanionClient.checkPcStatus(
+            if (showCheckingHint && actionJob?.isActive != true) {
+                applyTileVisuals(prefs = prefs, isAwake = prefs.lastKnownAwake, overrideSubtitle = "Checking…")
+            }
+            verifyAndSaveStatus(prefs)
+            if (actionJob?.isActive != true) {
+                applyTileVisuals(
+                    prefs = prefs,
+                    isAwake = prefs.lastKnownAwake,
+                    overrideSubtitle = null
+                )
+            }
+        }
+    }
+
+    private fun startListeningPollLoop() {
+        pollingJob?.cancel()
+        pollingJob = serviceScope.launch {
+            while (isActive && isListening) {
+                delay(3500)
+                if (!isListening || actionJob?.isActive == true) continue
+                val prefs = MobilePrefs(this@WaddleFreeTileService)
+                if (!isLocalNetworkConnected()) {
+                    applyTileVisuals(prefs = prefs, isAwake = false, overrideSubtitle = "No Wi-Fi")
+                    continue
+                }
+                if (PcCompanionClient.isValidIpv4(prefs.fullIp)) {
+                    verifyAndSaveStatus(prefs)
+                    if (actionJob?.isActive != true && isListening) {
+                        applyTileVisuals(
+                            prefs = prefs,
+                            isAwake = prefs.lastKnownAwake,
+                            overrideSubtitle = null
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun verifyAndSaveStatus(prefs: MobilePrefs) {
+        val ip = prefs.fullIp
+        val mac = prefs.fullMac
+        if (!PcCompanionClient.isValidIpv4(ip)) return
+
+        var res = PcCompanionClient.checkPcStatus(
+            ipAddress = ip,
+            macAddress = mac,
+            deviceId = prefs.deviceId,
+            cachedPort = prefs.cachedPort
+        )
+
+        // If previously awake and first probe missed (e.g. Wi-Fi power-save wakeup), do 1 quick retry
+        if (!res.isAwake && prefs.lastKnownAwake && isLocalNetworkConnected()) {
+            delay(250)
+            res = PcCompanionClient.checkPcStatus(
                 ipAddress = ip,
                 macAddress = mac,
                 deviceId = prefs.deviceId,
                 cachedPort = prefs.cachedPort
             )
-            // Do not overwrite if user started an action while status check was running
-            if (actionJob?.isActive == true) return@launch
+        }
 
-            if (res.isAwake) {
-                if (res.pcName.isNotBlank()) prefs.lastPcName = res.pcName
-                if (res.activePort in 1024..49151) prefs.cachedPort = res.activePort
-            }
-            prefs.lastKnownAwake = res.isAwake
-            hasVerifiedStatusThisSession = true
-            applyTileVisuals(
-                prefs = prefs,
-                isAwake = res.isAwake,
-                overrideSubtitle = null
-            )
+        if (res.isAwake) {
+            if (res.pcName.isNotBlank()) prefs.lastPcName = res.pcName
+            if (res.activePort in 1024..49151) prefs.cachedPort = res.activePort
+        }
+        prefs.lastKnownAwake = res.isAwake
+        lastVerifiedAtMs = SystemClock.elapsedRealtime()
+    }
+
+    private fun isLocalNetworkConnected(): Boolean {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } catch (_: Exception) {
+            true
         }
     }
 

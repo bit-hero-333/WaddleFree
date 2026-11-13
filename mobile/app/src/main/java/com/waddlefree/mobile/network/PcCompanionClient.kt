@@ -1,10 +1,10 @@
 package com.waddlefree.mobile.network
 
 import android.os.Build
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -64,26 +64,15 @@ object PcCompanionClient {
         cachedPort: Int
     ): PcStatusResult = withContext(Dispatchers.IO) {
         if (!isValidIpv4(ipAddress)) return@withContext PcStatusResult(isAwake = false)
-
-        val basePort = deriveInitialZone2Port(macAddress)
-        val candidatePorts = buildList {
-            if (cachedPort in 1024..ZONE2_MAX_PORT) add(cachedPort)
-            for (offset in 0..4) {
-                var p = basePort + offset
-                if (p > ZONE2_MAX_PORT) p = ZONE2_MIN_PORT + (p - ZONE2_MAX_PORT - 1)
-                if (!contains(p)) add(p)
-            }
-        }
-
-        coroutineScope {
-            val deferreds = candidatePorts.map { port ->
-                async {
-                    queryHttpEndpoint(ipAddress, port, "/status", deviceId, connectTimeoutMs = 550, readTimeoutMs = 700)
-                }
-            }
-            val results = deferreds.awaitAll()
-            results.firstOrNull { it.isAwake } ?: PcStatusResult(isAwake = false)
-        }
+        queryFirstRespondingPort(
+            ipAddress = ipAddress,
+            macAddress = macAddress,
+            path = "/status",
+            deviceId = deviceId,
+            cachedPort = cachedPort,
+            connectTimeoutMs = 1800,
+            readTimeoutMs = 1500
+        )
     }
 
     suspend fun sendSleepCommand(
@@ -93,7 +82,30 @@ object PcCompanionClient {
         cachedPort: Int
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isValidIpv4(ipAddress)) return@withContext false
+        queryFirstRespondingPort(
+            ipAddress = ipAddress,
+            macAddress = macAddress,
+            path = "/sleep",
+            deviceId = deviceId,
+            cachedPort = cachedPort,
+            connectTimeoutMs = 1800,
+            readTimeoutMs = 1500
+        ).isAwake
+    }
 
+    /**
+     * Probes all candidate ports concurrently and returns IMMEDIATELY as soon as any port
+     * responds with HTTP 200, cancelling the remaining probes instead of waiting for timeouts.
+     */
+    private suspend fun queryFirstRespondingPort(
+        ipAddress: String,
+        macAddress: String,
+        path: String,
+        deviceId: String,
+        cachedPort: Int,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int
+    ): PcStatusResult = coroutineScope {
         val basePort = deriveInitialZone2Port(macAddress)
         val candidatePorts = buildList {
             if (cachedPort in 1024..ZONE2_MAX_PORT) add(cachedPort)
@@ -104,15 +116,33 @@ object PcCompanionClient {
             }
         }
 
-        coroutineScope {
-            val deferreds = candidatePorts.map { port ->
-                async {
-                    queryHttpEndpoint(ipAddress, port, "/sleep", deviceId, connectTimeoutMs = 550, readTimeoutMs = 700)
+        val winner = CompletableDeferred<PcStatusResult>()
+        val jobs = candidatePorts.map { port ->
+            launch {
+                val res = queryHttpEndpoint(
+                    ipAddress = ipAddress,
+                    port = port,
+                    path = path,
+                    deviceId = deviceId,
+                    connectTimeoutMs = connectTimeoutMs,
+                    readTimeoutMs = readTimeoutMs
+                )
+                if (res.isAwake) {
+                    winner.complete(res)
                 }
             }
-            val results = deferreds.awaitAll()
-            results.any { it.isAwake }
         }
+
+        launch {
+            jobs.forEach { it.join() }
+            if (!winner.isCompleted) {
+                winner.complete(PcStatusResult(isAwake = false))
+            }
+        }
+
+        val result = winner.await()
+        jobs.forEach { it.cancel() }
+        result
     }
 
     private fun queryHttpEndpoint(
