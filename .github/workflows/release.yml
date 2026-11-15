@@ -72,9 +72,41 @@ jobs:
           path: WaddleFree.apk
           if-no-files-found: error
 
+  build-tv:
+    name: Build Android TV APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Build Release TV APK
+        working-directory: tv
+        run: gradle assembleRelease --no-daemon
+
+      - name: Rename TV APK
+        run: cp tv/app/build/outputs/apk/release/app-release.apk WaddleFree-TV.apk
+
+      - name: Upload Android TV APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-tv-apk
+          path: WaddleFree-TV.apk
+          if-no-files-found: error
+
   attach-to-release:
     name: Attach Binaries to GitHub Release
-    needs: [build-windows, build-android]
+    needs: [build-windows, build-android, build-tv]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -88,9 +120,14 @@ jobs:
         with:
           name: android-apk
 
+      - name: Download Android TV APK
+        uses: actions/download-artifact@v4
+        with:
+          name: android-tv-apk
+
       - name: Upload Assets to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release upload "$TAG_NAME" WaddleFree.exe WaddleFree.apk --clobber --repo "${{ github.repository }}"
+          gh release upload "$TAG_NAME" WaddleFree.exe WaddleFree.apk WaddleFree-TV.apk --clobber --repo "${{ github.repository }}"

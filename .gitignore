@@ -20,6 +20,7 @@ local.properties
 *.keystore
 *.jks
 !mobile/app/keystore/waddlefree.jks
+!tv/app/keystore/waddlefree.jks
 
 # OS / Misc
 .DS_Store
