@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +36,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,7 +61,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -105,7 +110,9 @@ data class AppPalette(
     val accentSubtle: Color,
     val subtleSurface: Color,
     val menuSurface: Color,
-    val popupBg: Color
+    val popupBg: Color,
+    val focusRing: Color,
+    val focusOnAccent: Color
 )
 
 private val AutoCheckPresets = listOf("10 s", "30 s", "1 m", "5 m", "15 m")
@@ -114,23 +121,28 @@ private val AutoCheckPresets = listOf("10 s", "30 s", "1 m", "5 m", "15 m")
 fun TvFocusableSurface(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     shape: RoundedCornerShape = RoundedCornerShape(12.dp),
     backgroundColor: Color,
     borderColor: Color,
     focusedBorderColor: Color,
+    innerSeparatorColor: Color = Color(0xFF090D16),
     borderWidth: Dp = 1.5.dp,
     focusedBorderWidth: Dp = 3.dp,
     focusRequester: FocusRequester? = null,
+    onFocusChange: ((Boolean) -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentAlignment: Alignment = Alignment.Center,
     content: @Composable (isFocused: Boolean) -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
+    val isFocusedState by interactionSource.collectIsFocusedAsState()
+    val isFocused = enabled && isFocusedState
 
     Box(
         modifier = modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .onFocusChanged { state -> onFocusChange?.invoke(state.isFocused) }
             .clip(shape)
             .background(backgroundColor)
             .border(
@@ -138,10 +150,16 @@ fun TvFocusableSurface(
                 color = if (isFocused) focusedBorderColor else borderColor,
                 shape = shape
             )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
+            .then(
+                if (enabled) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier.focusProperties { canFocus = false }
+                }
             )
             .padding(contentPadding),
         contentAlignment = contentAlignment
@@ -150,6 +168,7 @@ fun TvFocusableSurface(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WaddleFreeTvApp(prefs: TvPrefs) {
     val context = LocalContext.current
@@ -181,12 +200,15 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
     var isGuideOpen by remember { mutableStateOf(false) }
     var isAppearanceOpen by remember { mutableStateOf(false) }
     val expandedFaqIndices = remember { mutableStateListOf<Int>() }
+    var lastExpandedFaqIndex by remember { mutableIntStateOf(-1) }
 
     // Active Octet Editor Modal State ("IP" or "MAC", and index)
     var editingType by remember { mutableStateOf<String?>(null) }
     var editingIndex by remember { mutableIntStateOf(0) }
 
     val checkStatusFocusRequester = remember { FocusRequester() }
+    val guideBtnFocusRequester = remember { FocusRequester() }
+    val closeGuideFocusRequester = remember { FocusRequester() }
     val ipFocusRequesters = remember { List(4) { FocusRequester() } }
     val macFocusRequesters = remember { List(6) { FocusRequester() } }
 
@@ -196,7 +218,13 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
             editingType != null -> editingType = null
             isAppearanceOpen -> isAppearanceOpen = false
             isPortInfoOpen -> isPortInfoOpen = false
-            isGuideOpen -> isGuideOpen = false
+            isGuideOpen -> {
+                isGuideOpen = false
+                scope.launch {
+                    delay(60)
+                    runCatching { guideBtnFocusRequester.requestFocus() }
+                }
+            }
             isOptionsOpen -> isOptionsOpen = false
         }
     }
@@ -333,6 +361,33 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
         )
     }
 
+    val faqQuestionFocusRequesters = remember { List(faqList.size) { FocusRequester() } }
+    val faqAnswerFocusRequesters = remember { List(faqList.size) { FocusRequester() } }
+    val faqAnswerBringIntoViewRequesters = remember { List(faqList.size) { BringIntoViewRequester() } }
+    val faqScrollState = rememberScrollState()
+
+    // When the FAQ Guide opens, move focus into the first FAQ question so D-pad Up/Down scrolls inside it immediately
+    LaunchedEffect(isGuideOpen) {
+        if (isGuideOpen) {
+            delay(80)
+            runCatching { faqQuestionFocusRequesters.firstOrNull()?.requestFocus() }
+        }
+    }
+
+    // Whenever a question is expanded, automatically scroll its answer into view
+    LaunchedEffect(lastExpandedFaqIndex, expandedFaqIndices.size) {
+        val idx = lastExpandedFaqIndex
+        if (idx in faqList.indices && expandedFaqIndices.contains(idx)) {
+            delay(70)
+            runCatching { faqAnswerBringIntoViewRequesters[idx].bringIntoView() }
+            delay(180)
+            runCatching { faqAnswerBringIntoViewRequesters[idx].bringIntoView() }
+            if (idx == faqList.lastIndex) {
+                runCatching { faqScrollState.animateScrollTo(faqScrollState.maxValue) }
+            }
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = palette.windowBg
@@ -438,7 +493,8 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                                 shape = RoundedCornerShape(12.dp),
                                 backgroundColor = palette.tileBg,
                                 borderColor = palette.tileBorder,
-                                focusedBorderColor = palette.accent
+                                focusedBorderColor = palette.focusRing,
+                                innerSeparatorColor = palette.windowBg
                             ) {
                                 Column(
                                     modifier = Modifier.width((18f * uiScale).dp),
@@ -518,19 +574,15 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                 }
 
                 val onSleepAction: () -> Unit = {
-                    if (!isPcAwake) {
-                        feedbackBanner = "PC is already sleeping or offline"
-                    } else {
-                        scope.launch {
-                            val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
-                            if (ok) {
-                                isPcAwake = false
-                                prefs.lastKnownAwake = false
-                                feedbackBanner = "✓ Sleep signal sent to PC"
-                            } else {
-                                feedbackBanner = "Could not reach PC—check IP & network"
-                                refreshStatus(manualTrigger = false)
-                            }
+                    scope.launch {
+                        val ok = PcCompanionClient.sendSleepCommand(fullIp, fullMac, prefs.deviceId, cachedPort)
+                        if (ok) {
+                            isPcAwake = false
+                            prefs.lastKnownAwake = false
+                            feedbackBanner = "✓ Sleep signal sent to PC"
+                        } else {
+                            feedbackBanner = "Could not reach PC—check IP & network"
+                            refreshStatus(manualTrigger = false)
                         }
                     }
                 }
@@ -601,9 +653,9 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                     ) {
                         Box(
                             modifier = Modifier
-                                .widthIn(max = 580.dp)
+                                .widthIn(max = 620.dp)
                                 .fillMaxWidth()
-                                .heightIn(max = 270.dp)
+                                .heightIn(max = 285.dp)
                                 .padding(bottom = 10.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(palette.popupBg)
@@ -611,20 +663,62 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                                 .padding(14.dp)
                         ) {
                             Column {
-                                Text(
-                                    text = "Setup Guide & FAQ (Use D-Pad & OK to expand)",
-                                    fontSize = (13.5f * textScale).sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = palette.primaryText,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Setup Guide & FAQ (OK to expand • Down/Up to scroll)",
+                                        fontSize = (13f * textScale).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = palette.primaryText
+                                    )
+
+                                    TvFocusableSurface(
+                                        onClick = {
+                                            isGuideOpen = false
+                                            scope.launch {
+                                                delay(60)
+                                                runCatching { guideBtnFocusRequester.requestFocus() }
+                                            }
+                                        },
+                                        focusRequester = closeGuideFocusRequester,
+                                        modifier = Modifier.focusProperties {
+                                            up = closeGuideFocusRequester
+                                            left = closeGuideFocusRequester
+                                            right = closeGuideFocusRequester
+                                            down = faqQuestionFocusRequesters.firstOrNull() ?: FocusRequester.Default
+                                        },
+                                        shape = RoundedCornerShape(7.dp),
+                                        backgroundColor = palette.subtleSurface,
+                                        borderColor = palette.tileBorder,
+                                        focusedBorderColor = palette.focusRing,
+                                        innerSeparatorColor = palette.windowBg,
+                                        borderWidth = 1.dp,
+                                        focusedBorderWidth = 2.5.dp,
+                                        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "✕ Close",
+                                            fontSize = (11.5f * textScale).sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = palette.primaryText
+                                        )
+                                    }
+                                }
 
                                 Column(
-                                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                                    modifier = Modifier.verticalScroll(faqScrollState),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     faqList.forEachIndexed { idx, item ->
                                         val isExpanded = expandedFaqIndices.contains(idx)
+                                        val isFirst = idx == 0
+                                        val isLast = idx == faqList.lastIndex
+
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -633,14 +727,33 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                                         ) {
                                             TvFocusableSurface(
                                                 onClick = {
-                                                    if (isExpanded) expandedFaqIndices.remove(idx)
-                                                    else expandedFaqIndices.add(idx)
+                                                    if (isExpanded) {
+                                                        expandedFaqIndices.remove(idx)
+                                                    } else {
+                                                        expandedFaqIndices.add(idx)
+                                                        lastExpandedFaqIndex = idx
+                                                    }
                                                 },
-                                                modifier = Modifier.fillMaxWidth(),
+                                                focusRequester = faqQuestionFocusRequesters[idx],
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .focusProperties {
+                                                        left = faqQuestionFocusRequesters[idx]
+                                                        right = faqQuestionFocusRequesters[idx]
+                                                        if (isFirst) {
+                                                            up = closeGuideFocusRequester
+                                                        }
+                                                        down = when {
+                                                            isExpanded -> faqAnswerFocusRequesters[idx]
+                                                            !isLast -> faqQuestionFocusRequesters[idx + 1]
+                                                            else -> faqQuestionFocusRequesters[idx]
+                                                        }
+                                                    },
                                                 shape = RoundedCornerShape(11.dp),
                                                 backgroundColor = palette.tileBg,
                                                 borderColor = palette.tileBorder,
-                                                focusedBorderColor = palette.accent,
+                                                focusedBorderColor = palette.focusRing,
+                                                innerSeparatorColor = palette.windowBg,
                                                 borderWidth = 1.dp,
                                                 focusedBorderWidth = 2.5.dp,
                                                 contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp)
@@ -668,12 +781,38 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                                                 }
                                             }
 
-                                            AnimatedVisibility(visible = isExpanded) {
-                                                Box(
+                                            if (isExpanded) {
+                                                TvFocusableSurface(
+                                                    onClick = {
+                                                        expandedFaqIndices.remove(idx)
+                                                        scope.launch {
+                                                            delay(40)
+                                                            runCatching { faqQuestionFocusRequesters[idx].requestFocus() }
+                                                        }
+                                                    },
+                                                    focusRequester = faqAnswerFocusRequesters[idx],
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .background(palette.faqAnswerBg)
-                                                        .padding(horizontal = 13.dp, vertical = 10.dp)
+                                                        .bringIntoViewRequester(faqAnswerBringIntoViewRequesters[idx])
+                                                        .focusProperties {
+                                                            left = faqAnswerFocusRequesters[idx]
+                                                            right = faqAnswerFocusRequesters[idx]
+                                                            up = faqQuestionFocusRequesters[idx]
+                                                            down = if (!isLast) {
+                                                                faqQuestionFocusRequesters[idx + 1]
+                                                            } else {
+                                                                faqAnswerFocusRequesters[idx]
+                                                            }
+                                                        },
+                                                    shape = RoundedCornerShape(bottomStart = 11.dp, bottomEnd = 11.dp),
+                                                    backgroundColor = palette.faqAnswerBg,
+                                                    borderColor = Color.Transparent,
+                                                    focusedBorderColor = palette.focusRing,
+                                                    innerSeparatorColor = palette.windowBg,
+                                                    borderWidth = 0.dp,
+                                                    focusedBorderWidth = 2.5.dp,
+                                                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 11.dp),
+                                                    contentAlignment = Alignment.TopStart
                                                 ) {
                                                     Text(
                                                         text = item.answer,
@@ -697,11 +836,13 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                     ) {
                         TvFocusableSurface(
                             onClick = { isGuideOpen = !isGuideOpen },
+                            focusRequester = guideBtnFocusRequester,
                             modifier = Modifier.size(iconBtnSize),
                             shape = RoundedCornerShape(12.dp),
                             backgroundColor = palette.tileBg,
                             borderColor = palette.tileBorder,
-                            focusedBorderColor = palette.accent
+                            focusedBorderColor = palette.focusRing,
+                            innerSeparatorColor = palette.windowBg
                         ) {
                             Box(
                                 modifier = Modifier
@@ -754,7 +895,8 @@ fun WaddleFreeTvApp(prefs: TvPrefs) {
                                 shape = RoundedCornerShape(8.dp),
                                 backgroundColor = Color.Transparent,
                                 borderColor = Color.Transparent,
-                                focusedBorderColor = palette.accent,
+                                focusedBorderColor = palette.focusRing,
+                                innerSeparatorColor = palette.windowBg,
                                 borderWidth = 0.dp,
                                 focusedBorderWidth = 2.dp,
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
@@ -870,6 +1012,29 @@ private fun TvPcConnectionTile(
     onSleepClick: () -> Unit,
     onRefreshClick: () -> Unit
 ) {
+    val wakeFocusRequester = remember { FocusRequester() }
+    val sleepFocusRequester = remember { FocusRequester() }
+    var isWakeFocused by remember { mutableStateOf(false) }
+    var isSleepFocused by remember { mutableStateOf(false) }
+
+    // Just like on the mobile APK:
+    // When PC is awake -> Wake PC is disabled (non-interactable) & Sleep PC is enabled.
+    // When PC is sleeping -> Wake PC is enabled & Sleep PC is disabled (non-interactable).
+    val wakeEnabled = !isPcAwake
+    val sleepEnabled = isPcAwake
+
+    // If the user had focus on Wake or Sleep when PC state flips, move focus to the newly enabled button
+    // so D-pad focus is never lost when the previous button becomes non-interactable.
+    LaunchedEffect(isPcAwake) {
+        if (isPcAwake && isWakeFocused) {
+            delay(40)
+            runCatching { sleepFocusRequester.requestFocus() }
+        } else if (!isPcAwake && isSleepFocused) {
+            delay(40)
+            runCatching { wakeFocusRequester.requestFocus() }
+        }
+    }
+
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
@@ -896,7 +1061,8 @@ private fun TvPcConnectionTile(
                 shape = RoundedCornerShape(8.dp),
                 backgroundColor = palette.subtleSurface,
                 borderColor = palette.tileBorder,
-                focusedBorderColor = palette.accent,
+                focusedBorderColor = palette.focusRing,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.dp,
                 focusedBorderWidth = 2.5.dp,
                 contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp)
@@ -934,21 +1100,21 @@ private fun TvPcConnectionTile(
             }
         }
 
-        // Both buttons stay focusable at all times so D-pad focus is never lost when PC status flips
-        val wakeActive = !isPcAwake
-        val sleepActive = isPcAwake
-
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             TvFocusableSurface(
                 onClick = onWakeClick,
+                enabled = wakeEnabled,
+                focusRequester = wakeFocusRequester,
+                onFocusChange = { isWakeFocused = it },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
-                backgroundColor = if (wakeActive) palette.accent else palette.subtleSurface,
-                borderColor = if (wakeActive) palette.accent else palette.tileBorder,
-                focusedBorderColor = if (wakeActive) Color.White else palette.accent,
+                backgroundColor = if (wakeEnabled) palette.accent else palette.subtleSurface,
+                borderColor = if (wakeEnabled) palette.accent else palette.tileBorder,
+                focusedBorderColor = palette.focusOnAccent,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.5.dp,
                 focusedBorderWidth = 3.dp,
                 contentPadding = PaddingValues(vertical = 12.dp, horizontal = 12.dp)
@@ -957,17 +1123,21 @@ private fun TvPcConnectionTile(
                     text = "Wake PC",
                     fontSize = (13.5f * textScale).sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (wakeActive) palette.onAccent else palette.secondaryText.copy(alpha = 0.65f)
+                    color = if (wakeEnabled) palette.onAccent else palette.secondaryText.copy(alpha = 0.45f)
                 )
             }
 
             TvFocusableSurface(
                 onClick = onSleepClick,
+                enabled = sleepEnabled,
+                focusRequester = sleepFocusRequester,
+                onFocusChange = { isSleepFocused = it },
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(12.dp),
-                backgroundColor = if (sleepActive) palette.accent else palette.subtleSurface,
-                borderColor = if (sleepActive) palette.accent else palette.tileBorder,
-                focusedBorderColor = if (sleepActive) Color.White else palette.accent,
+                backgroundColor = if (sleepEnabled) palette.accent else palette.subtleSurface,
+                borderColor = if (sleepEnabled) palette.accent else palette.tileBorder,
+                focusedBorderColor = palette.focusOnAccent,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.5.dp,
                 focusedBorderWidth = 3.dp,
                 contentPadding = PaddingValues(vertical = 12.dp, horizontal = 12.dp)
@@ -976,7 +1146,7 @@ private fun TvPcConnectionTile(
                     text = "Sleep PC",
                     fontSize = (13.5f * textScale).sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (sleepActive) palette.onAccent else palette.secondaryText.copy(alpha = 0.65f)
+                    color = if (sleepEnabled) palette.onAccent else palette.secondaryText.copy(alpha = 0.45f)
                 )
             }
         }
@@ -1045,7 +1215,8 @@ private fun TvIpAddressTile(
                     shape = RoundedCornerShape(10.dp),
                     backgroundColor = palette.faqAnswerBg,
                     borderColor = palette.tileBorder,
-                    focusedBorderColor = palette.accent,
+                    focusedBorderColor = palette.focusRing,
+                    innerSeparatorColor = palette.windowBg,
                     borderWidth = 1.dp,
                     focusedBorderWidth = 3.dp,
                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 4.dp)
@@ -1121,7 +1292,8 @@ private fun TvMacAddressTile(
                     shape = RoundedCornerShape(10.dp),
                     backgroundColor = palette.faqAnswerBg,
                     borderColor = palette.tileBorder,
-                    focusedBorderColor = palette.accent,
+                    focusedBorderColor = palette.focusRing,
+                    innerSeparatorColor = palette.windowBg,
                     borderWidth = 1.dp,
                     focusedBorderWidth = 3.dp,
                     contentPadding = PaddingValues(vertical = 12.dp, horizontal = 2.dp)
@@ -1203,7 +1375,8 @@ private fun TvOptionsMenuBar(
                         shape = RoundedCornerShape(7.dp),
                         backgroundColor = if (active) palette.accent else Color.Transparent,
                         borderColor = Color.Transparent,
-                        focusedBorderColor = if (active) Color.White else palette.accent,
+                        focusedBorderColor = if (active) palette.focusOnAccent else palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         borderWidth = 0.dp,
                         focusedBorderWidth = 2.dp,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
@@ -1227,7 +1400,8 @@ private fun TvOptionsMenuBar(
                 shape = RoundedCornerShape(8.dp),
                 backgroundColor = palette.subtleSurface,
                 borderColor = palette.tileBorder,
-                focusedBorderColor = palette.accent,
+                focusedBorderColor = palette.focusRing,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.dp,
                 focusedBorderWidth = 2.5.dp
             ) {
@@ -1267,7 +1441,8 @@ private fun TvOptionsMenuBar(
                 shape = RoundedCornerShape(8.dp),
                 backgroundColor = palette.subtleSurface,
                 borderColor = palette.tileBorder,
-                focusedBorderColor = palette.accent,
+                focusedBorderColor = palette.focusRing,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.dp,
                 focusedBorderWidth = 2.5.dp,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 5.dp)
@@ -1310,7 +1485,8 @@ private fun TvOptionsMenuBar(
                 shape = RoundedCornerShape(50),
                 backgroundColor = Color.Transparent,
                 borderColor = palette.accent,
-                focusedBorderColor = Color.White,
+                focusedBorderColor = palette.focusOnAccent,
+                innerSeparatorColor = palette.windowBg,
                 borderWidth = 1.5.dp,
                 focusedBorderWidth = 2.5.dp
             ) {
@@ -1340,7 +1516,6 @@ private fun TvOctetKeypadDialog(
     onDismiss: () -> Unit
 ) {
     val maxOctets = if (isIp) 4 else 6
-    val maxChars = if (isIp) 3 else 2
     val firstKeyFocusRequester = remember { FocusRequester() }
 
     fun appendChar(ch: String) {
@@ -1431,7 +1606,8 @@ private fun TvOctetKeypadDialog(
                             shape = RoundedCornerShape(9.dp),
                             backgroundColor = if (isSelected) palette.accentSubtle else palette.faqAnswerBg,
                             borderColor = if (isSelected) palette.accent else palette.tileBorder,
-                            focusedBorderColor = Color.White,
+                            focusedBorderColor = palette.focusRing,
+                            innerSeparatorColor = palette.windowBg,
                             borderWidth = if (isSelected) 2.dp else 1.dp,
                             focusedBorderWidth = 2.5.dp,
                             contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp)
@@ -1482,7 +1658,8 @@ private fun TvOctetKeypadDialog(
                                 shape = RoundedCornerShape(10.dp),
                                 backgroundColor = palette.tileBg,
                                 borderColor = palette.tileBorder,
-                                focusedBorderColor = palette.accent,
+                                focusedBorderColor = palette.focusRing,
+                                innerSeparatorColor = palette.windowBg,
                                 borderWidth = 1.dp,
                                 focusedBorderWidth = 2.5.dp,
                                 contentPadding = PaddingValues(vertical = 10.dp)
@@ -1509,7 +1686,8 @@ private fun TvOctetKeypadDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = palette.subtleSurface,
                         borderColor = palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1526,7 +1704,8 @@ private fun TvOctetKeypadDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = palette.subtleSurface,
                         borderColor = palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1543,7 +1722,8 @@ private fun TvOctetKeypadDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = palette.subtleSurface,
                         borderColor = palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1560,7 +1740,8 @@ private fun TvOctetKeypadDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = palette.subtleSurface,
                         borderColor = palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1577,7 +1758,8 @@ private fun TvOctetKeypadDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = palette.accent,
                         borderColor = palette.accent,
-                        focusedBorderColor = Color.White,
+                        focusedBorderColor = palette.focusOnAccent,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1655,7 +1837,8 @@ private fun TvAppearanceDialog(
                                     shape = RoundedCornerShape(10.dp),
                                     backgroundColor = if (selected) palette.accent else palette.tileBg,
                                     borderColor = if (selected) palette.accent else palette.tileBorder,
-                                    focusedBorderColor = if (selected) Color.White else palette.accent,
+                                    focusedBorderColor = if (selected) palette.focusOnAccent else palette.focusRing,
+                                    innerSeparatorColor = palette.windowBg,
                                     contentPadding = PaddingValues(vertical = 10.dp)
                                 ) {
                                     Text(
@@ -1689,7 +1872,8 @@ private fun TvAppearanceDialog(
                             shape = RoundedCornerShape(10.dp),
                             backgroundColor = if (selected) palette.accent else palette.tileBg,
                             borderColor = if (selected) palette.accent else palette.tileBorder,
-                            focusedBorderColor = if (selected) Color.White else palette.accent,
+                            focusedBorderColor = if (selected) palette.focusOnAccent else palette.focusRing,
+                            innerSeparatorColor = palette.windowBg,
                             contentPadding = PaddingValues(vertical = 9.dp)
                         ) {
                             Text(
@@ -1712,7 +1896,8 @@ private fun TvAppearanceDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = if (highContrast) palette.accentSubtle else palette.tileBg,
                         borderColor = if (highContrast) palette.accent else palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1729,7 +1914,8 @@ private fun TvAppearanceDialog(
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = if (boldBodyText) palette.accentSubtle else palette.tileBg,
                         borderColor = if (boldBodyText) palette.accent else palette.tileBorder,
-                        focusedBorderColor = palette.accent,
+                        focusedBorderColor = palette.focusRing,
+                        innerSeparatorColor = palette.windowBg,
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         Text(
@@ -1747,7 +1933,8 @@ private fun TvAppearanceDialog(
                     shape = RoundedCornerShape(10.dp),
                     backgroundColor = palette.accent,
                     borderColor = palette.accent,
-                    focusedBorderColor = Color.White,
+                    focusedBorderColor = palette.focusOnAccent,
+                    innerSeparatorColor = palette.windowBg,
                     contentPadding = PaddingValues(vertical = 10.dp)
                 ) {
                     Text(
@@ -1784,7 +1971,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x33A78BFA),
                 subtleSurface = Color(0xFF231A3E),
                 menuSurface = Color(0xFF161026),
-                popupBg = Color(0xFF1B1430)
+                popupBg = Color(0xFF1B1430),
+                focusRing = Color(0xFFFBBF24),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             "Emerald" -> AppPalette(
                 windowBg = Color(0xFF07120F),
@@ -1798,7 +1987,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x3334D399),
                 subtleSurface = Color(0xFF142E27),
                 menuSurface = Color(0xFF0B1A16),
-                popupBg = Color(0xFF10241E)
+                popupBg = Color(0xFF10241E),
+                focusRing = Color(0xFFFBBF24),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             "Sunset" -> AppPalette(
                 windowBg = Color(0xFF140C0A),
@@ -1812,7 +2003,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x33FB923C),
                 subtleSurface = Color(0xFF311D18),
                 menuSurface = Color(0xFF1C100E),
-                popupBg = Color(0xFF271714)
+                popupBg = Color(0xFF271714),
+                focusRing = Color(0xFF38BDF8),
+                focusOnAccent = Color(0xFF38BDF8)
             )
             "AMOLED" -> AppPalette(
                 windowBg = Color(0xFF000000),
@@ -1826,7 +2019,9 @@ private fun buildAppPalette(
                 accentSubtle = defaultAccent.copy(alpha = 0.22f),
                 subtleSurface = Color(0xFF18181B),
                 menuSurface = Color(0xFF09090B),
-                popupBg = Color(0xFF121215)
+                popupBg = Color(0xFF121215),
+                focusRing = Color(0xFFFBBF24),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             "Monochrome" -> AppPalette(
                 windowBg = Color(0xFF0B0D13),
@@ -1840,7 +2035,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x33E2E8F0),
                 subtleSurface = Color(0xFF1E2436),
                 menuSurface = Color(0xFF111520),
-                popupBg = Color(0xFF171C29)
+                popupBg = Color(0xFF171C29),
+                focusRing = Color(0xFFFBBF24),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             else -> AppPalette(
                 windowBg = Color(0xFF090D16),
@@ -1854,7 +2051,9 @@ private fun buildAppPalette(
                 accentSubtle = defaultAccent.copy(alpha = 0.20f),
                 subtleSurface = Color(0xFF1E293B),
                 menuSurface = Color(0xFF0F172A),
-                popupBg = Color(0xFF162033)
+                popupBg = Color(0xFF162033),
+                focusRing = Color(0xFFFBBF24),
+                focusOnAccent = Color(0xFFFBBF24)
             )
         }
     } else {
@@ -1871,7 +2070,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x267C3AED),
                 subtleSurface = Color(0xFFEDE9FE),
                 menuSurface = Color(0xFFFFFFFF),
-                popupBg = Color(0xFFFFFFFF)
+                popupBg = Color(0xFFFFFFFF),
+                focusRing = Color(0xFFD97706),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             "Emerald" -> AppPalette(
                 windowBg = Color(0xFFECFDF5),
@@ -1885,7 +2086,9 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x26059669),
                 subtleSurface = Color(0xFFD1FAE5),
                 menuSurface = Color(0xFFFFFFFF),
-                popupBg = Color(0xFFFFFFFF)
+                popupBg = Color(0xFFFFFFFF),
+                focusRing = Color(0xFFD97706),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             "Sunset" -> AppPalette(
                 windowBg = Color(0xFFFFF7ED),
@@ -1899,7 +2102,25 @@ private fun buildAppPalette(
                 accentSubtle = Color(0x26EA580C),
                 subtleSurface = Color(0xFFFFEDD5),
                 menuSurface = Color(0xFFFFFFFF),
-                popupBg = Color(0xFFFFFFFF)
+                popupBg = Color(0xFFFFFFFF),
+                focusRing = Color(0xFF0284C7),
+                focusOnAccent = Color(0xFF38BDF8)
+            )
+            "Monochrome" -> AppPalette(
+                windowBg = Color(0xFFF1F5F9),
+                tileBg = Color(0xFFFFFFFF),
+                tileBorder = if (highContrast) Color(0xFF0F172A) else Color(0xFFCBD5E1),
+                faqAnswerBg = Color(0xFFE2E8F0),
+                primaryText = Color(0xFF0F172A),
+                secondaryText = Color(0xFF475569),
+                accent = Color(0xFF1E293B),
+                onAccent = Color(0xFFFFFFFF),
+                accentSubtle = Color(0x261E293B),
+                subtleSurface = Color(0xFFE2E8F0),
+                menuSurface = Color(0xFFFFFFFF),
+                popupBg = Color(0xFFFFFFFF),
+                focusRing = Color(0xFFD97706),
+                focusOnAccent = Color(0xFFFBBF24)
             )
             else -> AppPalette(
                 windowBg = Color(0xFFF1F5F9),
@@ -1913,7 +2134,9 @@ private fun buildAppPalette(
                 accentSubtle = defaultAccent.copy(alpha = 0.16f),
                 subtleSurface = Color(0xFFE2E8F0),
                 menuSurface = Color(0xFFFFFFFF),
-                popupBg = Color(0xFFFFFFFF)
+                popupBg = Color(0xFFFFFFFF),
+                focusRing = Color(0xFFD97706),
+                focusOnAccent = Color(0xFFFBBF24)
             )
         }
     }
