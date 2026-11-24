@@ -4,7 +4,7 @@
 
 Ever felt too lazy to stand up from your bed to turn on your PC because you happen to be in that very niche group of people who use their gaming PC as a media server, but don't want it running 24/7? Well, it's your lucky day!
 
-You just install both apps on your PC and mobile device to wake up your PC and put it back to sleep directly from your phone.
+You just install both apps on your PC and mobile device to wake up your PC and put it back to sleep directly from your mobile device.
 
 ### Features
 - **Local Connection**: Connects your PC directly to your mobile devices locally (via local IP and MAC address).
